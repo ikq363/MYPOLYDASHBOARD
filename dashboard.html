@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MYPOLY Dashboard</title>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
+        import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // Firebase Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyAcTdgGAEPnUEP87N_BuLBxBmSzo1NOVHY",
+            authDomain: "mypoly-dashboard.firebaseapp.com",
+            projectId: "mypoly-dashboard",
+            storageBucket: "mypoly-dashboard.firebasestorage.app",
+            messagingSenderId: "829710608275",
+            appId: "1:829710608275:web:f2c68b3c6b181cfc256a66",
+            measurementId: "G-HTZXCGB1ZB"
+        };
+
+        // Initialize
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // ===== ALLOWED USER (hanya email ni dibenarkan) =====
+        // ⚠️ Tukar email ini kepada email awak sendiri
+        const ALLOWED_EMAIL = "ikqram363@gmail.com";
+
+        // ===== DOM ELEMENTS =====
+        const userEmail = document.getElementById('userEmail');
+        const userName = document.getElementById('userName');
+        const userNameInput = document.getElementById('userNameInput');
+        const editNameBtn = document.getElementById('editNameBtn');
+        const saveNameBtn = document.getElementById('saveNameBtn');
+        const cancelNameBtn = document.getElementById('cancelNameBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const setupModal = document.getElementById('setupModal');
+        const setupName = document.getElementById('setupName');
+        const setupEmail = document.getElementById('setupEmail');
+        const setupSubmit = document.getElementById('setupSubmit');
+
+        // Date & Time
+        const currentDate = document.getElementById('currentDate');
+        const currentTime = document.getElementById('currentTime');
+        const currentDay = document.getElementById('currentDay');
+
+        // Stats
+        const totalTasks = document.getElementById('totalTasks');
+        const totalNotis = document.getElementById('totalNotis');
+        const totalBahan = document.getElementById('totalBahan');
+        const totalAI = document.getElementById('totalAI');
+
+        // ===== CHECK AUTH & ACCESS =====
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) {
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // Check if user is allowed
+            if (user.email !== ALLOWED_EMAIL) {
+                alert('Akses ditolak. Email tidak dibenarkan.');
+                await signOut(auth);
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // Load user data
+            userEmail.textContent = user.email;
+            await loadUserProfile(user.uid, user.email);
+            startDateTime();
+            loadStats();
+        });
+
+        // ===== LOAD USER PROFILE FROM FIRESTORE =====
+        async function loadUserProfile(uid, email) {
+            try {
+                const userRef = doc(db, "users", uid);
+                const userSnap = await getDoc(userRef);
+
+                if (userSnap.exists()) {
+                    const data = userSnap.data();
+                    userName.textContent = data.displayName || 'Sila kemaskini nama';
+                    userNameInput.value = data.displayName || '';
+
+                    // Setup real-time listener
+                    onSnapshot(userRef, (doc) => {
+                        if (doc.exists()) {
+                            const data = doc.data();
+                            userName.textContent = data.displayName || 'Sila kemaskini nama';
+                            userNameInput.value = data.displayName || '';
+                        }
+                    });
+
+                } else {
+                    // First time user - show setup modal
+                    showSetupModal(uid, email);
+                }
+
+            } catch (error) {
+                console.error('Error loading profile:', error);
+                userName.textContent = 'Error loading name';
+            }
+        }
+
+        // ===== SHOW SETUP MODAL =====
+        function showSetupModal(uid, email) {
+            setupModal.classList.add('show');
+            setupEmail.textContent = email;
+            setupName.focus();
+
+            setupSubmit.onclick = async () => {
+                const name = setupName.value.trim();
+                if (!name) {
+                    alert('Sila masukkan nama anda.');
+                    return;
+                }
+
+                try {
+                    const userRef = doc(db, "users", uid);
+                    await setDoc(userRef, {
+                        displayName: name,
+                        email: email,
+                        role: 'student',
+                        createdAt: new Date().toISOString()
+                    });
+
+                    userName.textContent = name;
+                    userNameInput.value = name;
+                    setupModal.classList.remove('show');
+                    showNotification('✅ Profil berjaya disimpan!', 'success');
+
+                } catch (error) {
+                    console.error('Error saving profile:', error);
+                    alert('Gagal menyimpan profil. Sila cuba lagi.');
+                }
+            };
+
+            // Enter key to submit
+            setupName.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') setupSubmit.click();
+            });
+        }
+
+        // ===== UPDATE NAME =====
+        async function updateName() {
+            const newName = userNameInput.value.trim();
+            if (!newName) {
+                alert('Sila masukkan nama.');
+                return;
+            }
+
+            try {
+                const user = auth.currentUser;
+                if (!user) return;
+
+                const userRef = doc(db, "users", user.uid);
+                await updateDoc(userRef, {
+                    displayName: newName,
+                    updatedAt: new Date().toISOString()
+                });
+
+                userName.textContent = newName;
+                toggleEditMode(false);
+                showNotification('✅ Nama berjaya dikemaskini!', 'success');
+
+            } catch (error) {
+                console.error('Error updating name:', error);
+                alert('Gagal kemaskini nama. Sila cuba lagi.');
+            }
+        }
+
+        // ===== TOGGLE EDIT MODE =====
+        function toggleEditMode(isEditing) {
+            if (isEditing) {
+                userNameInput.style.display = 'inline-block';
+                userName.style.display = 'none';
+                editNameBtn.style.display = 'none';
+                saveNameBtn.style.display = 'inline-block';
+                cancelNameBtn.style.display = 'inline-block';
+                userNameInput.focus();
+                userNameInput.select();
+            } else {
+                userNameInput.style.display = 'none';
+                userName.style.display = 'inline-block';
+                editNameBtn.style.display = 'inline-block';
+                saveNameBtn.style.display = 'none';
+                cancelNameBtn.style.display = 'none';
+                userNameInput.value = userName.textContent;
+            }
+        }
+
+        // ===== EVENT LISTENERS =====
+        editNameBtn.addEventListener('click', () => toggleEditMode(true));
+        saveNameBtn.addEventListener('click', updateName);
+        cancelNameBtn.addEventListener('click', () => toggleEditMode(false));
+
+        userNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') updateName();
+            if (e.key === 'Escape') toggleEditMode(false);
+        });
+
+        // ===== LOGOUT =====
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                await signOut(auth);
+                window.location.href = 'index.html';
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        });
+
+        // ===== DATE & TIME =====
+        function startDateTime() {
+            const days = ['Ahad', 'Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu'];
+            const months = ['Januari', 'Februari', 'Mac', 'April', 'Mei', 'Jun', 'Julai', 'Ogos', 'September', 'Oktober', 'November', 'Disember'];
+
+            function update() {
+                const now = new Date();
+                const day = days[now.getDay()];
+                const date = now.getDate();
+                const month = months[now.getMonth()];
+                const year = now.getFullYear();
+
+                currentDate.textContent = `${date} ${month} ${year}`;
+                currentDay.textContent = day;
+
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+                currentTime.textContent = `${hours}:${minutes}:${seconds}`;
+            }
+
+            update();
+            setInterval(update, 1000);
+        }
+
+        // ===== LOAD STATS =====
+        function loadStats() {
+            // Demo stats - nanti boleh sambung dengan data real
+            totalTasks.textContent = '12';
+            totalNotis.textContent = '5';
+            totalBahan.textContent = '8';
+            totalAI.textContent = '3';
+        }
+
+        // ===== NOTIFICATION FUNCTION =====
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => notification.classList.add('show'), 100);
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // ===== NAVIGATION =====
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const page = this.dataset.page;
+                showNotification(`Navigasi ke: ${page}`, 'info');
+                // Nanti boleh redirect ke page masing-masing
+                // window.location.href = `${page}.html`;
+            });
+        });
+
+        // ===== EXPOSE FOR DEBUGGING =====
+        window.auth = auth;
+        window.db = db;
+
+    </script>
+
+    <style>
+        /* ===== RESET & BASE ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a1a;
+            color: #ffffff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ===== NOTIFICATION ===== */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: -400px;
+            padding: 16px 24px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 9999;
+            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .notification.show {
+            right: 20px;
+        }
+
+        .notification.success {
+            border-color: #51cf66;
+            background: rgba(81, 207, 102, 0.15);
+        }
+
+        .notification.error {
+            border-color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.15);
+        }
+
+        .notification.info {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.15);
+        }
+
+        /* ===== SETUP MODAL ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            z-index: 9998;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal-box {
+            background: #1a1a2e;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px 36px;
+            max-width: 440px;
+            width: 100%;
+            animation: slideUp 0.4s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .modal-box .modal-icon {
+            font-size: 48px;
+            text-align: center;
+            display: block;
+            margin-bottom: 12px;
+        }
+
+        .modal-box h2 {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 6px;
+        }
+
+        .modal-box p {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .modal-box .form-group {
+            margin-bottom: 16px;
+        }
+
+        .modal-box .form-group label {
+            display: block;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .modal-box .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #ffffff;
+            font-size: 15px;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+
+        .modal-box .form-group input:focus {
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        }
+
+        .modal-box .form-group input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .modal-box .btn-submit {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 8px;
+        }
+
+        .modal-box .btn-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        /* ===== NAVBAR ===== */
+        .navbar {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 12px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .navbar-brand span {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .navbar-brand .brand-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .navbar-brand .brand-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            padding: 4px;
+        }
+
+        .navbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .navbar-right .user-email {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 13px;
+        }
+
+        .btn-logout {
+            padding: 8px 20px;
+            background: rgba(255, 82, 82, 0.12);
+            border: 1px solid rgba(255, 82, 82, 0.2);
+            border-radius: 8px;
+            color: #ff6b6b;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-logout:hover {
+            background: rgba(255, 82, 82, 0.25);
+            border-color: #ff6b6b;
+            transform: scale(1.02);
+        }
+
+        /* ===== MAIN ===== */
+        .main-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px 32px;
+        }
+
+        /* ===== PROFILE HEADER ===== */
+        .profile-header {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.08), rgba(118, 75, 162, 0.08));
+            border-radius: 20px;
+            padding: 32px 36px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            margin-bottom: 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .profile-info {
+            flex: 1;
+        }
+
+        .profile-info .greeting {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-bottom: 4px;
+        }
+
+        .profile-info .name-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .profile-info .name-wrapper h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffffff, #a8a8ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .profile-info .name-wrapper #userNameInput {
+            display: none;
+            font-size: 28px;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            padding: 4px 12px;
+            color: #ffffff;
+            outline: none;
+            font-family: inherit;
+            min-width: 250px;
+        }
+
+        .profile-info .name-wrapper #userNameInput:focus {
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
+        }
+
+        .profile-info .name-wrapper .btn-edit {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: rgba(255, 255, 255, 0.5);
+            padding: 6px 14px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s ease;
+        }
+
+        .profile-info .name-wrapper .btn-edit:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        .profile-info .name-wrapper .btn-save {
+            display: none;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 8px;
+            color: #ffffff;
+            padding: 6px 18px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .profile-info .name-wrapper .btn-save:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+        }
+
+        .profile-info .name-wrapper .btn-cancel {
+            display: none;
+            background: rgba(255, 82, 82, 0.1);
+            border: 1px solid rgba(255, 82, 82, 0.2);
+            border-radius: 8px;
+            color: #ff6b6b;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s ease;
+        }
+
+        .profile-info .name-wrapper .btn-cancel:hover {
+            background: rgba(255, 82, 82, 0.2);
+        }
+
+        .profile-info .email-display {
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 14px;
+            margin-top: 6px;
+        }
+
+        .datetime-display {
+            text-align: right;
+            min-width: 160px;
+        }
+
+        .datetime-display .time {
+            font-size: 32px;
+            font-weight: 700;
+            color: #ffffff;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .datetime-display .date {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 14px;
+        }
+
+        .datetime-display .day {
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 13px;
+            margin-top: 2px;
+        }
+
+        /* ===== QUICK STATS ===== */
+        .quick-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(102, 126, 234, 0.2);
+        }
+
+        .stat-card .stat-number {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-card .stat-label {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 13px;
+            margin-top: 4px;
+        }
+
+        .stat-card .stat-icon {
+            font-size: 24px;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        /* ===== DASHBOARD GRID ===== */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 24px;
+        }
+
+        /* ===== SIDEBAR MENU ===== */
+        .sidebar {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 20px 12px;
+            height: fit-content;
+            position: sticky;
+            top: 80px;
+        }
+
+        .sidebar .menu-label {
+            color: rgba(255, 255, 255, 0.2);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 0 12px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            margin-bottom: 12px;
+        }
+
+        .nav-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 12px 16px;
+            background: transparent;
+            border: none;
+            border-radius: 10px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: inherit;
+            text-align: left;
+        }
+
+        .nav-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: #ffffff;
+            transform: translateX(4px);
+        }
+
+        .nav-btn.active {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+            color: #ffffff;
+            border: 1px solid rgba(102, 126, 234, 0.2);
+        }
+
+        .nav-btn .nav-icon {
+            font-size: 18px;
+            width: 28px;
+            text-align: center;
+        }
+
+        .nav-btn .nav-badge {
+            margin-left: auto;
+            background: rgba(102, 126, 234, 0.2);
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        /* ===== CONTENT AREA ===== */
+        .content-area {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 16px;
+            padding: 28px 32px;
+            min-height: 500px;
+        }
+
+        .content-area .welcome-section h2 {
+            font-size: 22px;
+            margin-bottom: 8px;
+        }
+
+        .content-area .welcome-section p {
+            color: rgba(255, 255, 255, 0.4);
+            margin-bottom: 24px;
+        }
+
+        /* ===== CONTENT CARDS ===== */
+        .content-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .content-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .content-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(102, 126, 234, 0.2);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+
+        .content-card .card-icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .content-card h4 {
+            font-size: 15px;
+            margin-bottom: 4px;
+        }
+
+        .content-card p {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .content-card .card-footer {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 1024px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 4px;
+                padding: 12px;
+                position: static;
+            }
+
+            .sidebar .menu-label {
+                width: 100%;
+                padding-bottom: 8px;
+            }
+
+            .nav-btn {
+                flex: 1;
+                min-width: 100px;
+                justify-content: center;
+                padding: 10px 14px;
+            }
+
+            .nav-btn .nav-badge {
+                display: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 10px 16px;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .navbar-brand {
+                font-size: 17px;
+            }
+
+            .navbar-right .user-email {
+                font-size: 11px;
+            }
+
+            .main-container {
+                padding: 16px;
+            }
+
+            .profile-header {
+                flex-direction: column;
+                padding: 20px;
+                align-items: stretch;
+            }
+
+            .profile-info .name-wrapper h1 {
+                font-size: 22px;
+            }
+
+            .profile-info .name-wrapper #userNameInput {
+                font-size: 22px;
+                min-width: 150px;
+            }
+
+            .datetime-display {
+                text-align: left;
+                margin-top: 8px;
+            }
+
+            .datetime-display .time {
+                font-size: 24px;
+            }
+
+            .content-area {
+                padding: 20px 16px;
+            }
+
+            .quick-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .content-cards {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .quick-stats {
+                grid-template-columns: 1fr;
+            }
+
+            .content-cards {
+                grid-template-columns: 1fr;
+            }
+
+            .nav-btn {
+                min-width: 70px;
+                font-size: 12px;
+                padding: 8px 10px;
+            }
+
+            .nav-btn .nav-icon {
+                font-size: 16px;
+                width: 22px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===== SETUP MODAL (Pertama Kali Login) ===== -->
+    <div class="modal-overlay" id="setupModal">
+        <div class="modal-box">
+            <span class="modal-icon">👋</span>
+            <h2>Selamat Datang!</h2>
+            <p>Ini kali pertama anda login. Sila masukkan nama anda.</p>
+            <div class="form-group">
+                <label>📧 Email</label>
+                <input type="email" id="setupEmail" disabled />
+            </div>
+            <div class="form-group">
+                <label>👤 Nama Penuh</label>
+                <input type="text" id="setupName" placeholder="Masukkan nama anda..." />
+            </div>
+            <button class="btn-submit" id="setupSubmit">💾 Simpan Profil</button>
+        </div>
+    </div>
+
+    <!-- ===== NAVBAR ===== -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <div class="brand-icon">
+                <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQJPPtvSjk6_fnQby9h0pJi3dMLhp-x1BHV2g&s" alt="Logo" />
+            </div>
+            MYPOLY <span>Dashboard</span>
+        </div>
+        <div class="navbar-right">
+            <span class="user-email" id="userEmail">email@example.com</span>
+            <button class="btn-logout" id="logoutBtn">🚪 Logout</button>
+        </div>
+    </nav>
+
+    <!-- ===== MAIN ===== -->
+    <div class="main-container">
+
+        <!-- ===== PROFILE HEADER ===== -->
+        <div class="profile-header">
+            <div class="profile-info">
+                <div class="greeting">👋 Selamat Datang,</div>
+                <div class="name-wrapper">
+                    <h1 id="userName">Memuat naik...</h1>
+                    <input type="text" id="userNameInput" placeholder="Nama penuh" />
+                    <button class="btn-edit" id="editNameBtn">✏️ Ubah Nama</button>
+                    <button class="btn-save" id="saveNameBtn">💾 Simpan</button>
+                    <button class="btn-cancel" id="cancelNameBtn">✖️ Batal</button>
+                </div>
+                <div class="email-display" id="emailDisplay">📧 loading...</div>
+            </div>
+            <div class="datetime-display">
+                <div class="time" id="currentTime">--:--:--</div>
+                <div class="date" id="currentDate">-- -- ----</div>
+                <div class="day" id="currentDay">----</div>
+            </div>
+        </div>
+
+        <!-- ===== QUICK STATS ===== -->
+        <div class="quick-stats">
+            <div class="stat-card">
+                <span class="stat-icon">📋</span>
+                <div class="stat-number" id="totalTasks">0</div>
+                <div class="stat-label">Tugasan</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-icon">🔔</span>
+                <div class="stat-number" id="totalNotis">0</div>
+                <div class="stat-label">Notifikasi</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-icon">📚</span>
+                <div class="stat-number" id="totalBahan">0</div>
+                <div class="stat-label">Bahan Kuliah</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-icon">🤖</span>
+                <div class="stat-number" id="totalAI">0</div>
+                <div class="stat-label">AI Tools</div>
+            </div>
+        </div>
+
+        <!-- ===== DASHBOARD GRID ===== -->
+        <div class="dashboard-grid">
+
+            <!-- Sidebar Menu -->
+            <div class="sidebar">
+                <div class="menu-label">📌 Navigasi</div>
+
+                <button class="nav-btn active" data-page="dashboard">
+                    <span class="nav-icon">🏠</span>
+                    Dashboard
+                </button>
+
+                <button class="nav-btn" data-page="notifikasi">
+                    <span class="nav-icon">🔔</span>
+                    Notifikasi
+                    <span class="nav-badge">5</span>
+                </button>
+
+                <button class="nav-btn" data-page="tugasan">
+                    <span class="nav-icon">📋</span>
+                    Tugasan
+                    <span class="nav-badge">12</span>
+                </button>
+
+                <button class="nav-btn" data-page="jadual">
+                    <span class="nav-icon">📅</span>
+                    Jadual Perancangan
+                </button>
+
+                <button class="nav-btn" data-page="bahan">
+                    <span class="nav-icon">📚</span>
+                    Bahan Kuliah
+                    <span class="nav-badge">8</span>
+                </button>
+
+                <button class="nav-btn" data-page="ai">
+                    <span class="nav-icon">🤖</span>
+                    AI Tools
+                    <span class="nav-badge">3</span>
+                </button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <div class="welcome-section">
+                    <h2>📊 Ringkasan Dashboard</h2>
+                    <p>Selamat datang ke MYPOLY Dashboard peribadi anda. Semua data di sini adalah khusus untuk anda.</p>
+                </div>
+
+                <div class="content-cards">
+                    <div class="content-card">
+                        <div class="card-icon">📝</div>
+                        <h4>Tugasan Terkini</h4>
+                        <p>Ada 3 tugasan perlu dihantar minggu ini</p>
+                        <div class="card-footer">📅 Tarikh akhir: 30 Jun 2026</div>
+                    </div>
+
+                    <div class="content-card">
+                        <div class="card-icon">📢</div>
+                        <h4>Notifikasi</h4>
+                        <p>5 notifikasi belum dibaca</p>
+                        <div class="card-footer">🕐 Terkini: 10 minit lalu</div>
+                    </div>
+
+                    <div class="content-card">
+                        <div class="card-icon">📖</div>
+                        <h4>Bahan Kuliah</h4>
+                        <p>8 bahan kuliah tersedia untuk diulangkaji</p>
+                        <div class="card-footer">📁 3 folder aktif</div>
+                    </div>
+
+                    <div class="content-card">
+                        <div class="card-icon">🧠</div>
+                        <h4>AI Tools</h4>
+                        <p>Guna AI untuk bantu pembelajaran anda</p>
+                        <div class="card-footer">⚡ 3 tools sedia</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+</body>
+</html>
