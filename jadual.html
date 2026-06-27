@@ -34,6 +34,9 @@
         // ===== DOM ELEMENTS =====
         const userName = document.getElementById('userName');
         const logoutBtn = document.getElementById('logoutBtn');
+        const liveDate = document.getElementById('liveDate');
+        const liveTime = document.getElementById('liveTime');
+        const liveDay = document.getElementById('liveDay');
 
         // Jadual Kelas (Berulang)
         const classGrid = document.getElementById('classGrid');
@@ -41,8 +44,7 @@
         const classForm = document.getElementById('classForm');
         const classModalTitle = document.getElementById('classModalTitle');
         const classDay = document.getElementById('classDay');
-        const classTimeStart = document.getElementById('classTimeStart');
-        const classTimeEnd = document.getElementById('classTimeEnd');
+        const classTime = document.getElementById('classTime');
         const classSubject = document.getElementById('classSubject');
         const classCode = document.getElementById('classCode');
         const classLecturer = document.getElementById('classLecturer');
@@ -61,8 +63,7 @@
         const scheduleModalTitle = document.getElementById('scheduleModalTitle');
         const scheduleDay = document.getElementById('scheduleDay');
         const scheduleDate = document.getElementById('scheduleDate');
-        const scheduleTimeStart = document.getElementById('scheduleTimeStart');
-        const scheduleTimeEnd = document.getElementById('scheduleTimeEnd');
+        const scheduleTime = document.getElementById('scheduleTime');
         const scheduleSubject = document.getElementById('scheduleSubject');
         const scheduleCode = document.getElementById('scheduleCode');
         const scheduleLecturer = document.getElementById('scheduleLecturer');
@@ -92,21 +93,25 @@
         const weekDays = ['Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat'];
         const allDays = ['Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu', 'Ahad'];
 
-        // Generate time options (30 min intervals)
-        const timeOptions = [];
+        // Class times: 7:30 AM - 6:00 PM (30 min intervals)
+        const classTimes = [];
+        for (let h = 7; h < 18; h++) {
+            for (let m = 0; m < 60; m += 30) {
+                const hour = h < 10 ? `0${h}` : `${h}`;
+                const min = m === 0 ? '00' : '30';
+                classTimes.push(`${hour}:${min}`);
+            }
+        }
+
+        // Schedule times: 24 hours
+        const scheduleTimes = [];
         for (let h = 0; h < 24; h++) {
             for (let m = 0; m < 60; m += 30) {
                 const hour = h < 10 ? `0${h}` : `${h}`;
                 const min = m === 0 ? '00' : '30';
-                timeOptions.push(`${hour}:${min}`);
+                scheduleTimes.push(`${hour}:${min}`);
             }
         }
-
-        // Class times: 7:30 AM - 6:00 PM
-        const classTimeOptions = timeOptions.filter(t => {
-            const hour = parseInt(t.split(':')[0]);
-            return hour >= 7 && hour < 18;
-        });
 
         // ===== AUTH CHECK =====
         onAuthStateChanged(auth, async (user) => {
@@ -127,7 +132,32 @@
             renderClassGrid();
             renderScheduleGrid();
             updateWeekDisplay();
+            startLiveClock();
         });
+
+        // ===== LIVE CLOCK =====
+        function startLiveClock() {
+            const days = ['Ahad', 'Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu'];
+            const months = ['Januari', 'Februari', 'Mac', 'April', 'Mei', 'Jun', 'Julai', 'Ogos', 'September', 'Oktober', 'November', 'Disember'];
+
+            function update() {
+                const now = new Date();
+                const day = days[now.getDay()];
+                const date = now.getDate();
+                const month = months[now.getMonth()];
+                const year = now.getFullYear();
+                liveDay.textContent = day;
+                liveDate.textContent = `${date} ${month} ${year}`;
+                
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+                liveTime.textContent = `${hours}:${minutes}:${seconds}`;
+            }
+
+            update();
+            setInterval(update, 1000);
+        }
 
         // ===== LOAD USER PROFILE =====
         async function loadUserProfile(uid) {
@@ -148,7 +178,7 @@
             window.location.href = 'index.html';
         });
 
-        // ===== LOAD CLASS DATA =====
+        // ===== LOAD CLASS DATA (Berulang) =====
         async function loadClassData() {
             if (!currentUser) return;
             try {
@@ -160,7 +190,7 @@
                 classData = {};
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const key = `${data.day}-${data.timeStart}`;
+                    const key = `${data.day}-${data.time}`;
                     classData[key] = { id: doc.id, ...data };
                 });
             } catch (error) {
@@ -168,7 +198,7 @@
             }
         }
 
-        // ===== LOAD SCHEDULE DATA =====
+        // ===== LOAD SCHEDULE DATA (Dengan Tarikh) =====
         async function loadScheduleData() {
             if (!currentUser) return;
             try {
@@ -180,7 +210,7 @@
                 scheduleData = {};
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const key = `${data.date}-${data.day}-${data.timeStart}`;
+                    const key = `${data.date}-${data.day}-${data.time}`;
                     scheduleData[key] = { id: doc.id, ...data };
                 });
             } catch (error) {
@@ -188,7 +218,7 @@
             }
         }
 
-        // ===== GET DATE =====
+        // ===== GET DATE FOR DAY =====
         function getDateForDay(day, offset = 0) {
             const now = new Date();
             const currentDay = now.getDay();
@@ -217,7 +247,7 @@
             return dates;
         }
 
-        // ===== FORMAT TIME =====
+        // ===== FORMAT TIME DISPLAY =====
         function formatTimeDisplay(time) {
             const [h, m] = time.split(':');
             const hour = parseInt(h);
@@ -227,16 +257,7 @@
             return `${hour - 12}:${m} PM`;
         }
 
-        function formatTimeRange(start, end) {
-            return `${formatTimeDisplay(start)} - ${formatTimeDisplay(end)}`;
-        }
-
-        // ===== GET SLOT INDEX =====
-        function getTimeIndex(time, options) {
-            return options.indexOf(time);
-        }
-
-        // ===== RENDER CLASS GRID =====
+        // ===== RENDER CLASS GRID (Berulang) =====
         function renderClassGrid() {
             const grid = document.getElementById('classGrid');
             grid.innerHTML = '';
@@ -254,59 +275,31 @@
             `;
             grid.appendChild(headerRow);
 
-            // Build a 2D array to track what's in each cell
-            const rows = classTimeOptions.length - 1;
-            const cols = weekDays.length;
-            const gridData = Array.from({ length: rows }, () => Array(cols).fill(null));
-
-            // Fill grid with class data
-            Object.values(classData).forEach(data => {
-                const startIdx = getTimeIndex(data.timeStart, classTimeOptions);
-                const endIdx = getTimeIndex(data.timeEnd, classTimeOptions);
-                const dayIdx = weekDays.indexOf(data.day);
-                if (startIdx !== -1 && endIdx !== -1 && dayIdx !== -1) {
-                    for (let i = startIdx; i < endIdx && i < rows; i++) {
-                        if (i === startIdx) {
-                            gridData[i][dayIdx] = { type: 'start', data: data, rowspan: endIdx - startIdx };
-                        } else {
-                            gridData[i][dayIdx] = { type: 'spanned' };
-                        }
-                    }
-                }
-            });
-
-            // Render rows
-            for (let i = 0; i < rows; i++) {
-                const time = classTimeOptions[i];
-                const nextTime = classTimeOptions[i + 1];
+            // Time rows
+            classTimes.forEach(time => {
                 const row = document.createElement('div');
                 row.className = 'grid-row';
 
                 const timeLabel = document.createElement('div');
                 timeLabel.className = 'time-label';
-                timeLabel.textContent = formatTimeRange(time, nextTime);
+                timeLabel.textContent = formatTimeDisplay(time);
                 row.appendChild(timeLabel);
 
-                for (let j = 0; j < cols; j++) {
-                    const day = weekDays[j];
+                weekDays.forEach(day => {
                     const cell = document.createElement('div');
                     cell.className = 'grid-cell';
+                    cell.dataset.day = day;
+                    cell.dataset.time = time;
 
-                    const cellData = gridData[i][j];
-                    if (cellData && cellData.type === 'start') {
-                        const data = cellData.data;
-                        const rowspan = cellData.rowspan;
-                        if (rowspan > 1) {
-                            cell.style.gridRow = `span ${rowspan}`;
-                        }
-                        const duration = `${formatTimeDisplay(data.timeStart)} - ${formatTimeDisplay(data.timeEnd)}`;
+                    const key = `${day}-${time}`;
+                    if (classData[key]) {
+                        const data = classData[key];
                         cell.innerHTML = `
                             <div class="schedule-item" style="background: ${data.color || '#667eea'};">
                                 <div class="subject-code">${data.subjectCode || ''}</div>
                                 <div class="subject-name">${data.subjectName}</div>
                                 <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
                                 <div class="room-number">🏫 ${data.room || ''}</div>
-                                <div class="time-duration">🕐 ${duration}</div>
                                 <button class="delete-slot" data-id="${data.id}">✕</button>
                             </div>
                         `;
@@ -315,21 +308,19 @@
                             deleteClass(data.id);
                         });
                         cell.addEventListener('click', () => editClass(data.id));
-                    } else if (cellData && cellData.type === 'spanned') {
-                        cell.style.display = 'none';
                     } else {
+                        cell.addEventListener('click', () => openClassModal(day, time));
                         cell.innerHTML = `<span class="add-hint">+</span>`;
-                        cell.addEventListener('click', () => openClassModal(day, time, nextTime));
                     }
 
                     row.appendChild(cell);
-                }
+                });
 
                 grid.appendChild(row);
-            }
+            });
         }
 
-        // ===== RENDER SCHEDULE GRID =====
+        // ===== RENDER SCHEDULE GRID (Dengan Tarikh) =====
         function renderScheduleGrid() {
             const grid = document.getElementById('scheduleGrid');
             grid.innerHTML = '';
@@ -350,59 +341,33 @@
             `;
             grid.appendChild(headerRow);
 
-            const rows = timeOptions.length - 1;
-            const cols = allDays.length;
-            const gridData = Array.from({ length: rows }, () => Array(cols).fill(null));
-
-            // Fill grid with schedule data
-            Object.values(scheduleData).forEach(data => {
-                const startIdx = getTimeIndex(data.timeStart, timeOptions);
-                const endIdx = getTimeIndex(data.timeEnd, timeOptions);
-                const dayIdx = allDays.indexOf(data.day);
-                if (startIdx !== -1 && endIdx !== -1 && dayIdx !== -1) {
-                    for (let i = startIdx; i < endIdx && i < rows; i++) {
-                        if (i === startIdx) {
-                            gridData[i][dayIdx] = { type: 'start', data: data, rowspan: endIdx - startIdx };
-                        } else {
-                            gridData[i][dayIdx] = { type: 'spanned' };
-                        }
-                    }
-                }
-            });
-
-            // Render rows
-            for (let i = 0; i < rows; i++) {
-                const time = timeOptions[i];
-                const nextTime = timeOptions[i + 1];
+            // Time rows
+            scheduleTimes.forEach(time => {
                 const row = document.createElement('div');
                 row.className = 'grid-row';
 
                 const timeLabel = document.createElement('div');
                 timeLabel.className = 'time-label';
-                timeLabel.textContent = formatTimeRange(time, nextTime);
+                timeLabel.textContent = formatTimeDisplay(time);
                 row.appendChild(timeLabel);
 
-                for (let j = 0; j < cols; j++) {
-                    const day = allDays[j];
+                allDays.forEach(day => {
                     const cell = document.createElement('div');
                     cell.className = 'grid-cell';
                     const dateStr = formatDate(weekDates[day]);
+                    cell.dataset.day = day;
+                    cell.dataset.time = time;
+                    cell.dataset.date = dateStr;
 
-                    const cellData = gridData[i][j];
-                    if (cellData && cellData.type === 'start') {
-                        const data = cellData.data;
-                        const rowspan = cellData.rowspan;
-                        if (rowspan > 1) {
-                            cell.style.gridRow = `span ${rowspan}`;
-                        }
-                        const duration = `${formatTimeDisplay(data.timeStart)} - ${formatTimeDisplay(data.timeEnd)}`;
+                    const key = `${dateStr}-${day}-${time}`;
+                    if (scheduleData[key]) {
+                        const data = scheduleData[key];
                         cell.innerHTML = `
                             <div class="schedule-item" style="background: ${data.color || '#667eea'};">
                                 <div class="subject-code">${data.subjectCode || ''}</div>
                                 <div class="subject-name">${data.subjectName}</div>
                                 <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
                                 <div class="room-number">🏫 ${data.room || ''}</div>
-                                <div class="time-duration">🕐 ${duration}</div>
                                 <button class="delete-slot" data-id="${data.id}">✕</button>
                             </div>
                         `;
@@ -411,26 +376,39 @@
                             deleteSchedule(data.id);
                         });
                         cell.addEventListener('click', () => editSchedule(data.id));
-                    } else if (cellData && cellData.type === 'spanned') {
-                        cell.style.display = 'none';
                     } else {
-                        cell.innerHTML = `<span class="add-hint">+</span>`;
-                        cell.addEventListener('click', () => openScheduleModal(day, time, nextTime, weekDates[day]));
+                        // Check if there's a class at this time
+                        const classKey = `${day}-${time}`;
+                        if (classData[classKey]) {
+                            // Class exists - show it and prevent adding schedule
+                            const data = classData[classKey];
+                            cell.innerHTML = `
+                                <div class="schedule-item class-item" style="background: ${data.color || '#667eea'};">
+                                    <div class="subject-code">📚 ${data.subjectCode || ''}</div>
+                                    <div class="subject-name">${data.subjectName}</div>
+                                    <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
+                                    <div class="room-number">🏫 ${data.room || ''}</div>
+                                    <div class="class-badge">KELAS</div>
+                                </div>
+                            `;
+                            cell.style.cursor = 'default';
+                        } else {
+                            cell.addEventListener('click', () => openScheduleModal(day, time, weekDates[day]));
+                            cell.innerHTML = `<span class="add-hint">+</span>`;
+                        }
                     }
 
                     row.appendChild(cell);
-                }
+                });
 
                 grid.appendChild(row);
-            }
+            });
         }
 
         // ===== CLASS CRUD =====
-        function openClassModal(day, timeStart, timeEnd, editData = null) {
+        function openClassModal(day, time, editData = null) {
             classDay.value = day;
-            classTimeStart.value = timeStart;
-            classTimeEnd.value = timeEnd || getNextTimeSlot(timeStart, classTimeOptions);
-
+            classTime.value = time;
             if (editData) {
                 classModalTitle.textContent = '✏️ Edit Jadual Kelas';
                 classSubject.value = editData.subjectName || '';
@@ -456,18 +434,46 @@
         function editClass(id) {
             const key = Object.keys(classData).find(k => classData[k].id === id);
             if (key) {
-                const data = classData[key];
-                openClassModal(data.day, data.timeStart, data.timeEnd || getNextTimeSlot(data.timeStart, classTimeOptions), data);
+                openClassModal(classData[key].day, classData[key].time, classData[key]);
             }
         }
 
         async function deleteClass(id) {
-            if (!confirm('Padam jadual kelas ini?')) return;
+            if (!confirm('Padam jadual kelas ini? Ini akan padam semua jadual perancangan yang berkaitan.')) return;
             try {
+                // Delete from classes
                 await deleteDoc(doc(db, "classes", id));
-                showNotification('🗑️ Jadual kelas dipadam', 'info');
+                
+                // Find and delete related schedule entries
+                const data = Object.values(classData).find(d => d.id === id);
+                if (data) {
+                    const weekDates = getWeekDates(currentWeekOffset);
+                    // Delete for current week
+                    const dateStr = formatDate(weekDates[data.day]);
+                    const key = `${dateStr}-${data.day}-${data.time}`;
+                    if (scheduleData[key]) {
+                        await deleteDoc(doc(db, "schedules", scheduleData[key].id));
+                    }
+                    // Delete for all weeks (future)
+                    // We'll handle this by deleting all matching schedules
+                    const q = query(
+                        collection(db, "schedules"),
+                        where("userId", "==", currentUser.uid),
+                        where("day", "==", data.day),
+                        where("time", "==", data.time),
+                        where("type", "==", "class")
+                    );
+                    const snapshot = await getDocs(q);
+                    snapshot.forEach(async (doc) => {
+                        await deleteDoc(doc.ref);
+                    });
+                }
+
+                showNotification('🗑️ Jadual kelas dan perancangan berkaitan dipadam', 'info');
                 await loadClassData();
+                await loadScheduleData();
                 renderClassGrid();
+                renderScheduleGrid();
             } catch (error) {
                 console.error('Error deleting class:', error);
                 showNotification('❌ Gagal memadam', 'error');
@@ -478,19 +484,10 @@
             e.preventDefault();
             if (!currentUser) return;
 
-            const timeStart = classTimeStart.value;
-            const timeEnd = classTimeEnd.value;
-
-            if (timeStart >= timeEnd) {
-                showNotification('⚠️ Masa mesti sebelum masa tamat!', 'error');
-                return;
-            }
-
             const data = {
                 userId: currentUser.uid,
                 day: classDay.value,
-                timeStart: timeStart,
-                timeEnd: timeEnd,
+                time: classTime.value,
                 subjectName: classSubject.value.trim(),
                 subjectCode: classCode.value.trim(),
                 lecturer: classLecturer.value.trim(),
@@ -500,6 +497,13 @@
                 updatedAt: new Date().toISOString(),
                 type: 'class'
             };
+
+            // Check if class already exists at this time
+            const existingKey = `${data.day}-${data.time}`;
+            if (classData[existingKey] && !editingClassId) {
+                showNotification('⚠️ Sudah ada kelas pada waktu ini!', 'error');
+                return;
+            }
 
             try {
                 if (editingClassId) {
@@ -517,6 +521,7 @@
                 await loadClassData();
                 renderClassGrid();
 
+                // Auto-add to schedule for current and future weeks
                 await autoAddToSchedule(data);
 
                 if (data.notification) {
@@ -529,15 +534,18 @@
             }
         });
 
-        // ===== AUTO ADD TO SCHEDULE =====
+        // ===== AUTO ADD TO SCHEDULE (All Weeks) =====
         async function autoAddToSchedule(classData) {
             if (!currentUser) return;
+            
+            // Get current week dates
             const weekDates = getWeekDates(currentWeekOffset);
             const date = weekDates[classData.day];
             const dateStr = formatDate(date);
 
-            const key = `${dateStr}-${classData.day}-${classData.timeStart}`;
+            const key = `${dateStr}-${classData.day}-${classData.time}`;
 
+            // Check if already exists
             if (scheduleData[key]) return;
 
             try {
@@ -545,8 +553,7 @@
                     userId: currentUser.uid,
                     day: classData.day,
                     date: dateStr,
-                    timeStart: classData.timeStart,
-                    timeEnd: classData.timeEnd,
+                    time: classData.time,
                     subjectName: classData.subjectName,
                     subjectCode: classData.subjectCode,
                     lecturer: classData.lecturer,
@@ -564,22 +571,17 @@
         }
 
         // ===== SCHEDULE CRUD =====
-        function openScheduleModal(day, timeStart, timeEnd, date, editData = null) {
-            scheduleDay.value = day;
-            scheduleDate.value = formatDate(date);
-
-            // Get all time options
-            const allTimes = [];
-            for (let h = 0; h < 24; h++) {
-                for (let m = 0; m < 60; m += 30) {
-                    const hour = h < 10 ? `0${h}` : `${h}`;
-                    const min = m === 0 ? '00' : '30';
-                    allTimes.push(`${hour}:${min}`);
-                }
+        function openScheduleModal(day, time, date, editData = null) {
+            // Check if there's a class at this time
+            const classKey = `${day}-${time}`;
+            if (classData[classKey] && !editData) {
+                showNotification('⚠️ Ada kelas pada waktu ini! Tak boleh buat rancangan.', 'error');
+                return;
             }
 
-            scheduleTimeStart.value = timeStart;
-            scheduleTimeEnd.value = timeEnd || getNextTimeSlot(timeStart, allTimes);
+            scheduleDay.value = day;
+            scheduleDate.value = formatDate(date);
+            scheduleTime.value = time;
 
             if (editData) {
                 scheduleModalTitle.textContent = '✏️ Edit Jadual Perancangan';
@@ -609,7 +611,7 @@
                 const data = scheduleData[key];
                 const dateParts = data.date.split('/');
                 const date = new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
-                openScheduleModal(data.day, data.timeStart, data.timeEnd, date, data);
+                openScheduleModal(data.day, data.time, date, data);
             }
         }
 
@@ -630,20 +632,11 @@
             e.preventDefault();
             if (!currentUser) return;
 
-            const timeStart = scheduleTimeStart.value;
-            const timeEnd = scheduleTimeEnd.value;
-
-            if (timeStart >= timeEnd) {
-                showNotification('⚠️ Masa mesti sebelum masa tamat!', 'error');
-                return;
-            }
-
             const data = {
                 userId: currentUser.uid,
                 day: scheduleDay.value,
                 date: scheduleDate.value,
-                timeStart: timeStart,
-                timeEnd: timeEnd,
+                time: scheduleTime.value,
                 subjectName: scheduleSubject.value.trim(),
                 subjectCode: scheduleCode.value.trim(),
                 lecturer: scheduleLecturer.value.trim(),
@@ -653,6 +646,13 @@
                 type: 'schedule',
                 updatedAt: new Date().toISOString()
             };
+
+            // Check if there's a class at this time (for new schedule)
+            const classKey = `${data.day}-${data.time}`;
+            if (classData[classKey] && !editingScheduleId) {
+                showNotification('⚠️ Ada kelas pada waktu ini! Tak boleh buat rancangan.', 'error');
+                return;
+            }
 
             try {
                 if (editingScheduleId) {
@@ -687,11 +687,9 @@
                 return;
             }
 
-            const timeRange = `${formatTimeDisplay(data.timeStart)} - ${formatTimeDisplay(data.timeEnd)}`;
-
             if (Notification.permission === "granted") {
                 new Notification('📚 MYPOLY - Peringatan Kelas', {
-                    body: `🕐 ${timeRange}\n📖 ${data.subjectName} (${data.subjectCode})\n👨‍🏫 ${data.lecturer}\n🏫 ${data.room}`,
+                    body: `🕐 ${formatTimeDisplay(data.time)}\n📖 ${data.subjectName} (${data.subjectCode})\n👨‍🏫 ${data.lecturer}\n🏫 ${data.room}`,
                     icon: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQJPPtvSjk6_fnQby9h0pJi3dMLhp-x1BHV2g&s'
                 });
             } else if (Notification.permission !== "denied") {
@@ -749,10 +747,10 @@
         scheduleModal.addEventListener('click', (e) => { if (e.target === scheduleModal) closeScheduleModal(); });
 
         // ===== ADD BUTTONS =====
-        addClassBtn.addEventListener('click', () => openClassModal('Isnin', '08:00', '09:00'));
+        addClassBtn.addEventListener('click', () => openClassModal('Isnin', '08:00'));
         addScheduleBtn.addEventListener('click', () => {
             const weekDates = getWeekDates(currentWeekOffset);
-            openScheduleModal('Isnin', '08:00', '09:00', weekDates['Isnin']);
+            openScheduleModal('Isnin', '08:00', weekDates['Isnin']);
         });
 
         // ===== KEYBOARD SHORTCUTS =====
@@ -763,7 +761,7 @@
             }
         });
 
-        // ===== CHECK NOTIFICATIONS =====
+        // ===== CHECK NOTIFICATIONS EVERY MINUTE =====
         setInterval(() => {
             const now = new Date();
             const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -774,7 +772,7 @@
             Object.values(scheduleData).forEach(data => {
                 if (data.day === currentDay &&
                     data.date === dateStr &&
-                    data.timeStart === currentTime &&
+                    data.time === currentTime &&
                     data.notification) {
                     sendPushNotification(data);
                 }
@@ -788,15 +786,6 @@
 
         window.db = db;
         window.auth = auth;
-
-        // ===== HELPER FUNCTIONS =====
-        function getNextTimeSlot(time, options) {
-            const idx = options.indexOf(time);
-            if (idx < options.length - 1) {
-                return options[idx + 1];
-            }
-            return time;
-        }
 
     </script>
 
@@ -889,6 +878,28 @@
             object-fit: contain;
             padding: 4px;
         }
+
+        .navbar-center {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+        }
+        .navbar-center .live-day {
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 600;
+        }
+        .navbar-center .live-date {
+            color: rgba(255, 255, 255, 0.4);
+        }
+        .navbar-center .live-time {
+            color: #667eea;
+            font-weight: 700;
+            font-size: 16px;
+            font-variant-numeric: tabular-nums;
+        }
+
         .navbar-right {
             display: flex;
             align-items: center;
@@ -1030,12 +1041,12 @@
 
         #classGrid .grid-header,
         #classGrid .grid-row {
-            grid-template-columns: 110px repeat(5, 1fr);
+            grid-template-columns: 80px repeat(5, 1fr);
         }
 
         #scheduleGrid .grid-header,
         #scheduleGrid .grid-row {
-            grid-template-columns: 110px repeat(7, 1fr);
+            grid-template-columns: 80px repeat(7, 1fr);
         }
 
         .grid-header {
@@ -1071,17 +1082,17 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 10px;
-            color: rgba(255, 255, 255, 0.4);
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.3);
             padding: 4px;
             background: rgba(255, 255, 255, 0.02);
             border-radius: 6px;
-            font-weight: 600;
-            letter-spacing: 0.3px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
         }
 
         .grid-cell {
-            min-height: 55px;
+            min-height: 50px;
             background: rgba(255, 255, 255, 0.02);
             border-radius: 6px;
             border: 1px solid rgba(255, 255, 255, 0.03);
@@ -1121,7 +1132,6 @@
             gap: 1px;
             animation: slideIn 0.3s ease;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            min-height: 50px;
         }
         @keyframes slideIn {
             from {
@@ -1138,7 +1148,7 @@
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
         }
         .schedule-item .subject-code {
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 700;
             color: rgba(255, 255, 255, 0.7);
             letter-spacing: 0.5px;
@@ -1150,22 +1160,12 @@
             line-height: 1.2;
         }
         .schedule-item .lecturer-name {
-            font-size: 9px;
+            font-size: 10px;
             color: rgba(255, 255, 255, 0.6);
         }
         .schedule-item .room-number {
-            font-size: 9px;
+            font-size: 10px;
             color: rgba(255, 255, 255, 0.5);
-        }
-        .schedule-item .time-duration {
-            font-size: 8px;
-            color: rgba(255, 255, 255, 0.5);
-            background: rgba(0, 0, 0, 0.2);
-            padding: 0 6px;
-            border-radius: 4px;
-            display: inline-block;
-            width: fit-content;
-            margin-top: 1px;
         }
         .schedule-item .delete-slot {
             position: absolute;
@@ -1187,6 +1187,27 @@
         .schedule-item .delete-slot:hover {
             background: rgba(255, 71, 87, 0.6);
             color: #ffffff;
+        }
+
+        /* ===== CLASS BADGE ===== */
+        .class-badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            background: #ff6b6b;
+            color: #fff;
+            font-size: 7px;
+            padding: 1px 6px;
+            border-radius: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .class-item {
+            cursor: default !important;
+        }
+        .class-item:hover {
+            transform: none !important;
         }
 
         /* ===== MODAL ===== */
@@ -1212,7 +1233,7 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 20px;
             padding: 36px 40px;
-            max-width: 540px;
+            max-width: 520px;
             width: 100%;
             animation: slideUp 0.4s ease;
             box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5);
@@ -1290,16 +1311,6 @@
             grid-template-columns: 1fr 1fr;
             gap: 12px;
         }
-        .modal-box .form-row .time-row {
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            gap: 6px;
-            align-items: center;
-        }
-        .modal-box .form-row .time-row span {
-            color: rgba(255, 255, 255, 0.3);
-            font-size: 16px;
-        }
         .modal-box .form-check {
             display: flex;
             align-items: center;
@@ -1364,14 +1375,17 @@
             }
             #classGrid .grid-header,
             #classGrid .grid-row {
-                grid-template-columns: 90px repeat(5, 1fr);
+                grid-template-columns: 60px repeat(5, 1fr);
             }
             #scheduleGrid .grid-header,
             #scheduleGrid .grid-row {
-                grid-template-columns: 90px repeat(7, 1fr);
+                grid-template-columns: 60px repeat(7, 1fr);
             }
             .schedule-wrapper {
                 overflow-x: auto;
+            }
+            .navbar-center {
+                display: none;
             }
         }
 
@@ -1397,12 +1411,12 @@
             }
             #classGrid .grid-header,
             #classGrid .grid-row {
-                grid-template-columns: 80px repeat(5, 1fr);
+                grid-template-columns: 50px repeat(5, 1fr);
                 min-width: 500px;
             }
             #scheduleGrid .grid-header,
             #scheduleGrid .grid-row {
-                grid-template-columns: 80px repeat(7, 1fr);
+                grid-template-columns: 50px repeat(7, 1fr);
                 min-width: 600px;
             }
             .grid-cell {
@@ -1414,8 +1428,7 @@
             }
             .schedule-item .subject-code,
             .schedule-item .lecturer-name,
-            .schedule-item .room-number,
-            .schedule-item .time-duration {
+            .schedule-item .room-number {
                 font-size: 8px;
             }
             .day-header .day-name {
@@ -1440,15 +1453,13 @@
             }
             .schedule-item {
                 padding: 3px 4px;
-                min-height: 35px;
             }
             .schedule-item .subject-name {
                 font-size: 9px;
             }
             .schedule-item .subject-code,
             .schedule-item .lecturer-name,
-            .schedule-item .room-number,
-            .schedule-item .time-duration {
+            .schedule-item .room-number {
                 display: none;
             }
         }
@@ -1464,6 +1475,13 @@
             </div>
             MYPOLY <span>Jadual</span>
         </div>
+
+        <div class="navbar-center">
+            <span class="live-day" id="liveDay">-</span>
+            <span class="live-date" id="liveDate">-</span>
+            <span class="live-time" id="liveTime">--:--:--</span>
+        </div>
+
         <div class="navbar-right">
             <span class="user-name" id="userName">Pengguna</span>
             <a href="dashboard.html" class="btn-back">🏠 Dashboard</a>
@@ -1528,11 +1546,7 @@
                         </div>
                         <div class="form-group">
                             <label>🕐 Masa</label>
-                            <div class="time-row">
-                                <select id="classTimeStart" required></select>
-                                <span>-</span>
-                                <select id="classTimeEnd" required></select>
-                            </div>
+                            <select id="classTime" required></select>
                         </div>
                     </div>
                     <div class="form-group">
@@ -1603,11 +1617,7 @@
                     </div>
                     <div class="form-group">
                         <label>🕐 Masa</label>
-                        <div class="time-row">
-                            <select id="scheduleTimeStart" required></select>
-                            <span>-</span>
-                            <select id="scheduleTimeEnd" required></select>
-                        </div>
+                        <select id="scheduleTime" required></select>
                     </div>
                     <div class="form-group">
                         <label>📖 Nama Subjek</label>
@@ -1654,36 +1664,41 @@
     <script>
         // ===== POPULATE TIME DROPDOWNS =====
         function populateTimeSelects() {
-            const timeOptions = [];
+            // Class times: 7:30 AM - 6:00 PM
+            const classTimes = [];
+            for (let h = 7; h < 18; h++) {
+                for (let m = 0; m < 60; m += 30) {
+                    const hour = h < 10 ? `0${h}` : `${h}`;
+                    const min = m === 0 ? '00' : '30';
+                    classTimes.push(`${hour}:${min}`);
+                }
+            }
+
+            const classTimeSelect = document.getElementById('classTime');
+            classTimes.forEach(time => {
+                const option = document.createElement('option');
+                option.value = time;
+                option.textContent = formatTimeDisplay(time);
+                classTimeSelect.appendChild(option);
+            });
+
+            // Schedule times: 24 hours
+            const scheduleTimes = [];
             for (let h = 0; h < 24; h++) {
                 for (let m = 0; m < 60; m += 30) {
                     const hour = h < 10 ? `0${h}` : `${h}`;
                     const min = m === 0 ? '00' : '30';
-                    timeOptions.push(`${hour}:${min}`);
+                    scheduleTimes.push(`${hour}:${min}`);
                 }
             }
 
-            const classTimeOptions = timeOptions.filter(t => {
-                const hour = parseInt(t.split(':')[0]);
-                return hour >= 7 && hour < 18;
+            const scheduleTimeSelect = document.getElementById('scheduleTime');
+            scheduleTimes.forEach(time => {
+                const option = document.createElement('option');
+                option.value = time;
+                option.textContent = formatTimeDisplay(time);
+                scheduleTimeSelect.appendChild(option);
             });
-
-            function populateSelect(selectId, options, selectedValue) {
-                const select = document.getElementById(selectId);
-                select.innerHTML = '';
-                options.forEach(time => {
-                    const option = document.createElement('option');
-                    option.value = time;
-                    option.textContent = formatTimeDisplay(time);
-                    if (time === selectedValue) option.selected = true;
-                    select.appendChild(option);
-                });
-            }
-
-            populateSelect('classTimeStart', classTimeOptions, '08:00');
-            populateSelect('classTimeEnd', classTimeOptions, '09:00');
-            populateSelect('scheduleTimeStart', timeOptions, '08:00');
-            populateSelect('scheduleTimeEnd', timeOptions, '09:00');
         }
 
         function formatTimeDisplay(time) {
@@ -1697,28 +1712,11 @@
 
         populateTimeSelects();
 
-        // ===== MAKE FUNCTIONS GLOBAL =====
-        window.openClassModal = function(day, timeStart, timeEnd, editData) {
+        // Make functions available globally for modal
+        window.openClassModal = function(day, time, editData) {
             const modal = document.getElementById('classModal');
             document.getElementById('classDay').value = day;
-
-            const classTimeOptions = [];
-            for (let h = 7; h < 18; h++) {
-                for (let m = 0; m < 60; m += 30) {
-                    const hour = h < 10 ? `0${h}` : `${h}`;
-                    const min = m === 0 ? '00' : '30';
-                    classTimeOptions.push(`${hour}:${min}`);
-                }
-            }
-
-            if (!timeEnd) {
-                const idx = classTimeOptions.indexOf(timeStart);
-                timeEnd = classTimeOptions[idx + 1] || timeStart;
-            }
-
-            document.getElementById('classTimeStart').value = timeStart;
-            document.getElementById('classTimeEnd').value = timeEnd;
-
+            document.getElementById('classTime').value = time;
             if (editData) {
                 document.getElementById('classModalTitle').textContent = '✏️ Edit Jadual Kelas';
                 document.getElementById('classSubject').value = editData.subjectName || '';
@@ -1741,26 +1739,11 @@
             document.getElementById('classSubject').focus();
         };
 
-        window.openScheduleModal = function(day, timeStart, timeEnd, date, editData) {
+        window.openScheduleModal = function(day, time, date, editData) {
             const modal = document.getElementById('scheduleModal');
             document.getElementById('scheduleDay').value = day;
+            document.getElementById('scheduleTime').value = time;
             document.getElementById('scheduleDate').value = formatDateDisplay(date);
-
-            const timeOptions = [];
-            for (let h = 0; h < 24; h++) {
-                for (let m = 0; m < 60; m += 30) {
-                    const hour = h < 10 ? `0${h}` : `${h}`;
-                    const min = m === 0 ? '00' : '30';
-                    timeOptions.push(`${hour}:${min}`);
-                }
-            }
-            if (!timeEnd) {
-                const idx = timeOptions.indexOf(timeStart);
-                timeEnd = timeOptions[idx + 1] || timeStart;
-            }
-
-            document.getElementById('scheduleTimeStart').value = timeStart;
-            document.getElementById('scheduleTimeEnd').value = timeEnd;
 
             if (editData) {
                 document.getElementById('scheduleModalTitle').textContent = '✏️ Edit Jadual Perancangan';
