@@ -236,7 +236,7 @@
             return options.indexOf(time);
         }
 
-        // ===== RENDER CLASS GRID WITH ROWSPAN =====
+        // ===== RENDER CLASS GRID =====
         function renderClassGrid() {
             const grid = document.getElementById('classGrid');
             grid.innerHTML = '';
@@ -254,26 +254,31 @@
             `;
             grid.appendChild(headerRow);
 
-            // Track occupied cells per day
-            const occupied = {};
-            weekDays.forEach(day => { occupied[day] = {}; });
+            // Build a 2D array to track what's in each cell
+            const rows = classTimeOptions.length - 1;
+            const cols = weekDays.length;
+            const gridData = Array.from({ length: rows }, () => Array(cols).fill(null));
 
-            // First pass: mark all occupied slots
+            // Fill grid with class data
             Object.values(classData).forEach(data => {
                 const startIdx = getTimeIndex(data.timeStart, classTimeOptions);
                 const endIdx = getTimeIndex(data.timeEnd, classTimeOptions);
-                if (startIdx !== -1 && endIdx !== -1) {
-                    for (let i = startIdx; i < endIdx; i++) {
-                        occupied[data.day][i] = true;
+                const dayIdx = weekDays.indexOf(data.day);
+                if (startIdx !== -1 && endIdx !== -1 && dayIdx !== -1) {
+                    for (let i = startIdx; i < endIdx && i < rows; i++) {
+                        if (i === startIdx) {
+                            gridData[i][dayIdx] = { type: 'start', data: data, rowspan: endIdx - startIdx };
+                        } else {
+                            gridData[i][dayIdx] = { type: 'spanned' };
+                        }
                     }
                 }
             });
 
             // Render rows
-            for (let i = 0; i < classTimeOptions.length - 1; i++) {
+            for (let i = 0; i < rows; i++) {
                 const time = classTimeOptions[i];
                 const nextTime = classTimeOptions[i + 1];
-
                 const row = document.createElement('div');
                 row.className = 'grid-row';
 
@@ -282,67 +287,49 @@
                 timeLabel.textContent = formatTimeRange(time, nextTime);
                 row.appendChild(timeLabel);
 
-                weekDays.forEach(day => {
+                for (let j = 0; j < cols; j++) {
+                    const day = weekDays[j];
                     const cell = document.createElement('div');
                     cell.className = 'grid-cell';
 
-                    // Check if this cell is already occupied by a rowspan
-                    if (occupied[day] && occupied[day][i]) {
-                        // Check if this is the start of a class
-                        const key = `${day}-${time}`;
-                        if (classData[key]) {
-                            const data = classData[key];
-                            const startIdx = getTimeIndex(data.timeStart, classTimeOptions);
-                            const endIdx = getTimeIndex(data.timeEnd, classTimeOptions);
-                            const rowspan = endIdx - startIdx;
-
-                            if (rowspan > 1) {
-                                cell.style.gridRow = `span ${rowspan}`;
-                            }
-
-                            const duration = `${formatTimeDisplay(data.timeStart)} - ${formatTimeDisplay(data.timeEnd)}`;
-                            cell.innerHTML = `
-                                <div class="schedule-item" style="background: ${data.color || '#667eea'};">
-                                    <div class="subject-code">${data.subjectCode || ''}</div>
-                                    <div class="subject-name">${data.subjectName}</div>
-                                    <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
-                                    <div class="room-number">🏫 ${data.room || ''}</div>
-                                    <div class="time-duration">🕐 ${duration}</div>
-                                    <button class="delete-slot" data-id="${data.id}">✕</button>
-                                </div>
-                            `;
-                            cell.querySelector('.delete-slot').addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                deleteClass(data.id);
-                            });
-                            cell.addEventListener('click', () => editClass(data.id));
-
-                            // Mark all spanned cells as occupied
-                            for (let j = startIdx + 1; j < endIdx; j++) {
-                                occupied[day][j] = 'spanned';
-                            }
-                        } else if (occupied[day][i] === 'spanned') {
-                            // This cell is part of a rowspan, skip rendering
-                            cell.style.display = 'none';
-                        } else {
-                            // Should not happen, but fallback
-                            cell.innerHTML = `<span class="add-hint">+</span>`;
-                            cell.addEventListener('click', () => openClassModal(day, time, nextTime));
+                    const cellData = gridData[i][j];
+                    if (cellData && cellData.type === 'start') {
+                        const data = cellData.data;
+                        const rowspan = cellData.rowspan;
+                        if (rowspan > 1) {
+                            cell.style.gridRow = `span ${rowspan}`;
                         }
+                        const duration = `${formatTimeDisplay(data.timeStart)} - ${formatTimeDisplay(data.timeEnd)}`;
+                        cell.innerHTML = `
+                            <div class="schedule-item" style="background: ${data.color || '#667eea'};">
+                                <div class="subject-code">${data.subjectCode || ''}</div>
+                                <div class="subject-name">${data.subjectName}</div>
+                                <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
+                                <div class="room-number">🏫 ${data.room || ''}</div>
+                                <div class="time-duration">🕐 ${duration}</div>
+                                <button class="delete-slot" data-id="${data.id}">✕</button>
+                            </div>
+                        `;
+                        cell.querySelector('.delete-slot').addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            deleteClass(data.id);
+                        });
+                        cell.addEventListener('click', () => editClass(data.id));
+                    } else if (cellData && cellData.type === 'spanned') {
+                        cell.style.display = 'none';
                     } else {
-                        // Empty cell
                         cell.innerHTML = `<span class="add-hint">+</span>`;
                         cell.addEventListener('click', () => openClassModal(day, time, nextTime));
                     }
 
                     row.appendChild(cell);
-                });
+                }
 
                 grid.appendChild(row);
             }
         }
 
-        // ===== RENDER SCHEDULE GRID WITH ROWSPAN =====
+        // ===== RENDER SCHEDULE GRID =====
         function renderScheduleGrid() {
             const grid = document.getElementById('scheduleGrid');
             grid.innerHTML = '';
@@ -363,26 +350,30 @@
             `;
             grid.appendChild(headerRow);
 
-            // Track occupied cells per day
-            const occupied = {};
-            allDays.forEach(day => { occupied[day] = {}; });
+            const rows = timeOptions.length - 1;
+            const cols = allDays.length;
+            const gridData = Array.from({ length: rows }, () => Array(cols).fill(null));
 
-            // First pass: mark all occupied slots
+            // Fill grid with schedule data
             Object.values(scheduleData).forEach(data => {
                 const startIdx = getTimeIndex(data.timeStart, timeOptions);
                 const endIdx = getTimeIndex(data.timeEnd, timeOptions);
-                if (startIdx !== -1 && endIdx !== -1) {
-                    for (let i = startIdx; i < endIdx; i++) {
-                        occupied[data.day][i] = true;
+                const dayIdx = allDays.indexOf(data.day);
+                if (startIdx !== -1 && endIdx !== -1 && dayIdx !== -1) {
+                    for (let i = startIdx; i < endIdx && i < rows; i++) {
+                        if (i === startIdx) {
+                            gridData[i][dayIdx] = { type: 'start', data: data, rowspan: endIdx - startIdx };
+                        } else {
+                            gridData[i][dayIdx] = { type: 'spanned' };
+                        }
                     }
                 }
             });
 
             // Render rows
-            for (let i = 0; i < timeOptions.length - 1; i++) {
+            for (let i = 0; i < rows; i++) {
                 const time = timeOptions[i];
                 const nextTime = timeOptions[i + 1];
-
                 const row = document.createElement('div');
                 row.className = 'grid-row';
 
@@ -391,59 +382,44 @@
                 timeLabel.textContent = formatTimeRange(time, nextTime);
                 row.appendChild(timeLabel);
 
-                allDays.forEach(day => {
+                for (let j = 0; j < cols; j++) {
+                    const day = allDays[j];
                     const cell = document.createElement('div');
                     cell.className = 'grid-cell';
                     const dateStr = formatDate(weekDates[day]);
 
-                    // Check if this cell is already occupied by a rowspan
-                    if (occupied[day] && occupied[day][i]) {
-                        const key = `${dateStr}-${day}-${time}`;
-                        if (scheduleData[key]) {
-                            const data = scheduleData[key];
-                            const startIdx = getTimeIndex(data.timeStart, timeOptions);
-                            const endIdx = getTimeIndex(data.timeEnd, timeOptions);
-                            const rowspan = endIdx - startIdx;
-
-                            if (rowspan > 1) {
-                                cell.style.gridRow = `span ${rowspan}`;
-                            }
-
-                            const duration = `${formatTimeDisplay(data.timeStart)} - ${formatTimeDisplay(data.timeEnd)}`;
-                            cell.innerHTML = `
-                                <div class="schedule-item" style="background: ${data.color || '#667eea'};">
-                                    <div class="subject-code">${data.subjectCode || ''}</div>
-                                    <div class="subject-name">${data.subjectName}</div>
-                                    <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
-                                    <div class="room-number">🏫 ${data.room || ''}</div>
-                                    <div class="time-duration">🕐 ${duration}</div>
-                                    <button class="delete-slot" data-id="${data.id}">✕</button>
-                                </div>
-                            `;
-                            cell.querySelector('.delete-slot').addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                deleteSchedule(data.id);
-                            });
-                            cell.addEventListener('click', () => editSchedule(data.id));
-
-                            // Mark all spanned cells as occupied
-                            for (let j = startIdx + 1; j < endIdx; j++) {
-                                occupied[day][j] = 'spanned';
-                            }
-                        } else if (occupied[day][i] === 'spanned') {
-                            cell.style.display = 'none';
-                        } else {
-                            cell.innerHTML = `<span class="add-hint">+</span>`;
-                            cell.addEventListener('click', () => openScheduleModal(day, time, nextTime, weekDates[day]));
+                    const cellData = gridData[i][j];
+                    if (cellData && cellData.type === 'start') {
+                        const data = cellData.data;
+                        const rowspan = cellData.rowspan;
+                        if (rowspan > 1) {
+                            cell.style.gridRow = `span ${rowspan}`;
                         }
+                        const duration = `${formatTimeDisplay(data.timeStart)} - ${formatTimeDisplay(data.timeEnd)}`;
+                        cell.innerHTML = `
+                            <div class="schedule-item" style="background: ${data.color || '#667eea'};">
+                                <div class="subject-code">${data.subjectCode || ''}</div>
+                                <div class="subject-name">${data.subjectName}</div>
+                                <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
+                                <div class="room-number">🏫 ${data.room || ''}</div>
+                                <div class="time-duration">🕐 ${duration}</div>
+                                <button class="delete-slot" data-id="${data.id}">✕</button>
+                            </div>
+                        `;
+                        cell.querySelector('.delete-slot').addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            deleteSchedule(data.id);
+                        });
+                        cell.addEventListener('click', () => editSchedule(data.id));
+                    } else if (cellData && cellData.type === 'spanned') {
+                        cell.style.display = 'none';
                     } else {
-                        // Empty cell
                         cell.innerHTML = `<span class="add-hint">+</span>`;
                         cell.addEventListener('click', () => openScheduleModal(day, time, nextTime, weekDates[day]));
                     }
 
                     row.appendChild(cell);
-                });
+                }
 
                 grid.appendChild(row);
             }
@@ -453,7 +429,7 @@
         function openClassModal(day, timeStart, timeEnd, editData = null) {
             classDay.value = day;
             classTimeStart.value = timeStart;
-            classTimeEnd.value = timeEnd || getNextTimeSlot(timeStart);
+            classTimeEnd.value = timeEnd || getNextTimeSlot(timeStart, classTimeOptions);
 
             if (editData) {
                 classModalTitle.textContent = '✏️ Edit Jadual Kelas';
@@ -481,7 +457,7 @@
             const key = Object.keys(classData).find(k => classData[k].id === id);
             if (key) {
                 const data = classData[key];
-                openClassModal(data.day, data.timeStart, data.timeEnd || getNextTimeSlot(data.timeStart), data);
+                openClassModal(data.day, data.timeStart, data.timeEnd || getNextTimeSlot(data.timeStart, classTimeOptions), data);
             }
         }
 
@@ -591,8 +567,19 @@
         function openScheduleModal(day, timeStart, timeEnd, date, editData = null) {
             scheduleDay.value = day;
             scheduleDate.value = formatDate(date);
+
+            // Get all time options
+            const allTimes = [];
+            for (let h = 0; h < 24; h++) {
+                for (let m = 0; m < 60; m += 30) {
+                    const hour = h < 10 ? `0${h}` : `${h}`;
+                    const min = m === 0 ? '00' : '30';
+                    allTimes.push(`${hour}:${min}`);
+                }
+            }
+
             scheduleTimeStart.value = timeStart;
-            scheduleTimeEnd.value = timeEnd || getNextTimeSlot(timeStart);
+            scheduleTimeEnd.value = timeEnd || getNextTimeSlot(timeStart, allTimes);
 
             if (editData) {
                 scheduleModalTitle.textContent = '✏️ Edit Jadual Perancangan';
@@ -622,7 +609,7 @@
                 const data = scheduleData[key];
                 const dateParts = data.date.split('/');
                 const date = new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
-                openScheduleModal(data.day, data.timeStart, data.timeEnd || getNextTimeSlot(data.timeStart), date, data);
+                openScheduleModal(data.day, data.timeStart, data.timeEnd, date, data);
             }
         }
 
@@ -801,6 +788,15 @@
 
         window.db = db;
         window.auth = auth;
+
+        // ===== HELPER FUNCTIONS =====
+        function getNextTimeSlot(time, options) {
+            const idx = options.indexOf(time);
+            if (idx < options.length - 1) {
+                return options[idx + 1];
+            }
+            return time;
+        }
 
     </script>
 
@@ -1706,7 +1702,6 @@
             const modal = document.getElementById('classModal');
             document.getElementById('classDay').value = day;
 
-            // Auto-select start and end time
             const classTimeOptions = [];
             for (let h = 7; h < 18; h++) {
                 for (let m = 0; m < 60; m += 30) {
@@ -1716,7 +1711,6 @@
                 }
             }
 
-            // Set default end time to next slot if not provided
             if (!timeEnd) {
                 const idx = classTimeOptions.indexOf(timeStart);
                 timeEnd = classTimeOptions[idx + 1] || timeStart;
@@ -1752,7 +1746,6 @@
             document.getElementById('scheduleDay').value = day;
             document.getElementById('scheduleDate').value = formatDateDisplay(date);
 
-            // Set default end time to next slot if not provided
             const timeOptions = [];
             for (let h = 0; h < 24; h++) {
                 for (let m = 0; m < 60; m += 30) {
