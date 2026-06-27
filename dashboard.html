@@ -10,7 +10,21 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { 
+            getFirestore, 
+            doc, 
+            getDoc, 
+            setDoc, 
+            updateDoc, 
+            onSnapshot, 
+            collection, 
+            query, 
+            where, 
+            getCountFromServer,
+            getDocs,
+            orderBy,
+            limit
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // Firebase Config
         const firebaseConfig = {
@@ -29,7 +43,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // ===== ALLOWED USER (hanya email ni dibenarkan) =====
+        // ===== ALLOWED USER =====
         // ⚠️ Tukar email ini kepada email awak sendiri
         const ALLOWED_EMAIL = "ikqram363@gmail.com";
 
@@ -51,11 +65,20 @@
         const currentTime = document.getElementById('currentTime');
         const currentDay = document.getElementById('currentDay');
 
-        // Stats
+        // Stats Elements
         const totalTasks = document.getElementById('totalTasks');
         const totalNotis = document.getElementById('totalNotis');
         const totalBahan = document.getElementById('totalBahan');
         const totalAI = document.getElementById('totalAI');
+
+        // Badge Elements
+        const notifBadge = document.getElementById('notifBadge');
+        const tugasBadge = document.getElementById('tugasBadge');
+        const bahanBadge = document.getElementById('bahanBadge');
+        const aiBadge = document.getElementById('aiBadge');
+
+        // Content Cards Container
+        const contentCards = document.getElementById('contentCards');
 
         // ===== CHECK AUTH & ACCESS =====
         onAuthStateChanged(auth, async (user) => {
@@ -75,8 +98,9 @@
             // Load user data
             userEmail.textContent = user.email;
             await loadUserProfile(user.uid, user.email);
+            await loadAllStats(user.uid);
+            await loadContentCards(user.uid);
             startDateTime();
-            loadStats();
         });
 
         // ===== LOAD USER PROFILE FROM FIRESTORE =====
@@ -90,7 +114,7 @@
                     userName.textContent = data.displayName || 'Sila kemaskini nama';
                     userNameInput.value = data.displayName || '';
 
-                    // Setup real-time listener
+                    // Real-time listener
                     onSnapshot(userRef, (doc) => {
                         if (doc.exists()) {
                             const data = doc.data();
@@ -100,7 +124,6 @@
                     });
 
                 } else {
-                    // First time user - show setup modal
                     showSetupModal(uid, email);
                 }
 
@@ -143,7 +166,6 @@
                 }
             };
 
-            // Enter key to submit
             setupName.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') setupSubmit.click();
             });
@@ -242,13 +264,189 @@
             setInterval(update, 1000);
         }
 
-        // ===== LOAD STATS =====
-        function loadStats() {
-            // Demo stats - nanti boleh sambung dengan data real
-            totalTasks.textContent = '12';
-            totalNotis.textContent = '5';
-            totalBahan.textContent = '8';
-            totalAI.textContent = '3';
+        // ===== LOAD ALL STATS FROM FIRESTORE =====
+        async function loadAllStats(uid) {
+            try {
+                // Get counts from each collection
+                const [tasksCount, notifCount, bahanCount, aiCount] = await Promise.all([
+                    getCollectionCount('tasks', uid),
+                    getCollectionCount('notifications', uid),
+                    getCollectionCount('bahan_kuliah', uid),
+                    getCollectionCount('ai_tools', uid)
+                ]);
+
+                // Update stats numbers
+                totalTasks.textContent = tasksCount;
+                totalNotis.textContent = notifCount;
+                totalBahan.textContent = bahanCount;
+                totalAI.textContent = aiCount;
+
+                // Update badges
+                notifBadge.textContent = notifCount;
+                tugasBadge.textContent = tasksCount;
+                bahanBadge.textContent = bahanCount;
+                aiBadge.textContent = aiCount;
+
+                // Hide badges if 0
+                document.querySelectorAll('.nav-badge').forEach(badge => {
+                    if (badge.textContent === '0') {
+                        badge.style.display = 'none';
+                    } else {
+                        badge.style.display = 'inline-block';
+                    }
+                });
+
+                // Real-time listeners for each collection
+                listenToCollection('tasks', uid, (count) => {
+                    totalTasks.textContent = count;
+                    tugasBadge.textContent = count;
+                    if (count === 0) tugasBadge.style.display = 'none';
+                    else tugasBadge.style.display = 'inline-block';
+                });
+
+                listenToCollection('notifications', uid, (count) => {
+                    totalNotis.textContent = count;
+                    notifBadge.textContent = count;
+                    if (count === 0) notifBadge.style.display = 'none';
+                    else notifBadge.style.display = 'inline-block';
+                });
+
+                listenToCollection('bahan_kuliah', uid, (count) => {
+                    totalBahan.textContent = count;
+                    bahanBadge.textContent = count;
+                    if (count === 0) bahanBadge.style.display = 'none';
+                    else bahanBadge.style.display = 'inline-block';
+                });
+
+                listenToCollection('ai_tools', uid, (count) => {
+                    totalAI.textContent = count;
+                    aiBadge.textContent = count;
+                    if (count === 0) aiBadge.style.display = 'none';
+                    else aiBadge.style.display = 'inline-block';
+                });
+
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // ===== GET COLLECTION COUNT =====
+        async function getCollectionCount(collectionName, uid) {
+            try {
+                const q = query(
+                    collection(db, collectionName),
+                    where('userId', '==', uid)
+                );
+                const snapshot = await getCountFromServer(q);
+                return snapshot.data().count;
+            } catch (error) {
+                console.error(`Error counting ${collectionName}:`, error);
+                return 0;
+            }
+        }
+
+        // ===== REAL-TIME LISTENER FOR COLLECTION =====
+        function listenToCollection(collectionName, uid, callback) {
+            const q = query(
+                collection(db, collectionName),
+                where('userId', '==', uid)
+            );
+
+            onSnapshot(q, (snapshot) => {
+                callback(snapshot.size);
+            }, (error) => {
+                console.error(`Error listening to ${collectionName}:`, error);
+            });
+        }
+
+        // ===== LOAD CONTENT CARDS FROM FIRESTORE =====
+        async function loadContentCards(uid) {
+            try {
+                // Get recent items from each collection
+                const [recentTasks, recentNotif, recentBahan, recentAI] = await Promise.all([
+                    getRecentItems('tasks', uid),
+                    getRecentItems('notifications', uid),
+                    getRecentItems('bahan_kuliah', uid),
+                    getRecentItems('ai_tools', uid)
+                ]);
+
+                const cards = [
+                    {
+                        icon: '📝',
+                        title: 'Tugasan Terkini',
+                        description: recentTasks.length > 0 ? recentTasks[0].title || 'Tiada tugasan' : 'Tiada tugasan',
+                        footer: recentTasks.length > 0 ? `📅 ${formatDate(recentTasks[0].dueDate)}` : 'Tiada tugasan'
+                    },
+                    {
+                        icon: '📢',
+                        title: 'Notifikasi',
+                        description: recentNotif.length > 0 ? recentNotif[0].message || 'Tiada notifikasi' : 'Tiada notifikasi',
+                        footer: recentNotif.length > 0 ? `🕐 ${formatDate(recentNotif[0].createdAt)}` : 'Tiada notifikasi'
+                    },
+                    {
+                        icon: '📖',
+                        title: 'Bahan Kuliah',
+                        description: recentBahan.length > 0 ? recentBahan[0].title || 'Tiada bahan' : 'Tiada bahan',
+                        footer: recentBahan.length > 0 ? `📁 ${recentBahan[0].category || 'Umum'}` : 'Tiada bahan'
+                    },
+                    {
+                        icon: '🧠',
+                        title: 'AI Tools',
+                        description: recentAI.length > 0 ? recentAI[0].name || 'Tiada AI tools' : 'Tiada AI tools',
+                        footer: recentAI.length > 0 ? `⚡ ${recentAI[0].status || 'Sedia'}` : 'Tiada AI tools'
+                    }
+                ];
+
+                renderContentCards(cards);
+
+            } catch (error) {
+                console.error('Error loading content cards:', error);
+            }
+        }
+
+        // ===== GET RECENT ITEMS =====
+        async function getRecentItems(collectionName, uid, limitCount = 1) {
+            try {
+                const q = query(
+                    collection(db, collectionName),
+                    where('userId', '==', uid),
+                    orderBy('createdAt', 'desc'),
+                    limit(limitCount)
+                );
+                const snapshot = await getDocs(q);
+                return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            } catch (error) {
+                console.error(`Error getting recent ${collectionName}:`, error);
+                return [];
+            }
+        }
+
+        // ===== RENDER CONTENT CARDS =====
+        function renderContentCards(cards) {
+            contentCards.innerHTML = cards.map(card => `
+                <div class="content-card">
+                    <div class="card-icon">${card.icon}</div>
+                    <h4>${card.title}</h4>
+                    <p>${card.description}</p>
+                    <div class="card-footer">${card.footer}</div>
+                </div>
+            `).join('');
+        }
+
+        // ===== FORMAT DATE =====
+        function formatDate(dateString) {
+            if (!dateString) return 'Tarikh tidak tersedia';
+            try {
+                const date = new Date(dateString);
+                if (isNaN(date.getTime())) return 'Tarikh tidak sah';
+                return date.toLocaleDateString('ms-MY', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric'
+                });
+            } catch (e) {
+                return 'Tarikh tidak tersedia';
+            }
         }
 
         // ===== NOTIFICATION FUNCTION =====
@@ -270,8 +468,6 @@
             btn.addEventListener('click', function() {
                 const page = this.dataset.page;
                 showNotification(`Navigasi ke: ${page}`, 'info');
-                // Nanti boleh redirect ke page masing-masing
-                // window.location.href = `${page}.html`;
             });
         });
 
@@ -779,6 +975,7 @@
             font-size: 11px;
             color: #667eea;
             font-weight: 600;
+            display: none;
         }
 
         /* ===== CONTENT AREA ===== */
@@ -872,7 +1069,7 @@
             }
 
             .nav-btn .nav-badge {
-                display: none;
+                display: none !important;
             }
         }
 
@@ -1002,7 +1199,7 @@
                     <button class="btn-save" id="saveNameBtn">💾 Simpan</button>
                     <button class="btn-cancel" id="cancelNameBtn">✖️ Batal</button>
                 </div>
-                <div class="email-display" id="emailDisplay">📧 loading...</div>
+                <div class="email-display">📧 ikqram363@gmail.com</div>
             </div>
             <div class="datetime-display">
                 <div class="time" id="currentTime">--:--:--</div>
@@ -1050,13 +1247,13 @@
                 <button class="nav-btn" data-page="notifikasi">
                     <span class="nav-icon">🔔</span>
                     Notifikasi
-                    <span class="nav-badge">5</span>
+                    <span class="nav-badge" id="notifBadge">0</span>
                 </button>
 
                 <button class="nav-btn" data-page="tugasan">
                     <span class="nav-icon">📋</span>
                     Tugasan
-                    <span class="nav-badge">12</span>
+                    <span class="nav-badge" id="tugasBadge">0</span>
                 </button>
 
                 <button class="nav-btn" data-page="jadual">
@@ -1067,13 +1264,13 @@
                 <button class="nav-btn" data-page="bahan">
                     <span class="nav-icon">📚</span>
                     Bahan Kuliah
-                    <span class="nav-badge">8</span>
+                    <span class="nav-badge" id="bahanBadge">0</span>
                 </button>
 
                 <button class="nav-btn" data-page="ai">
                     <span class="nav-icon">🤖</span>
                     AI Tools
-                    <span class="nav-badge">3</span>
+                    <span class="nav-badge" id="aiBadge">0</span>
                 </button>
             </div>
 
@@ -1084,34 +1281,8 @@
                     <p>Selamat datang ke MYPOLY Dashboard peribadi anda. Semua data di sini adalah khusus untuk anda.</p>
                 </div>
 
-                <div class="content-cards">
-                    <div class="content-card">
-                        <div class="card-icon">📝</div>
-                        <h4>Tugasan Terkini</h4>
-                        <p>Ada 3 tugasan perlu dihantar minggu ini</p>
-                        <div class="card-footer">📅 Tarikh akhir: 30 Jun 2026</div>
-                    </div>
-
-                    <div class="content-card">
-                        <div class="card-icon">📢</div>
-                        <h4>Notifikasi</h4>
-                        <p>5 notifikasi belum dibaca</p>
-                        <div class="card-footer">🕐 Terkini: 10 minit lalu</div>
-                    </div>
-
-                    <div class="content-card">
-                        <div class="card-icon">📖</div>
-                        <h4>Bahan Kuliah</h4>
-                        <p>8 bahan kuliah tersedia untuk diulangkaji</p>
-                        <div class="card-footer">📁 3 folder aktif</div>
-                    </div>
-
-                    <div class="content-card">
-                        <div class="card-icon">🧠</div>
-                        <h4>AI Tools</h4>
-                        <p>Guna AI untuk bantu pembelajaran anda</p>
-                        <div class="card-footer">⚡ 3 tools sedia</div>
-                    </div>
+                <div class="content-cards" id="contentCards">
+                    <!-- Content cards will be loaded from Firestore -->
                 </div>
             </div>
 
