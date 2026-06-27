@@ -10,21 +10,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            getDoc, 
-            setDoc, 
-            updateDoc, 
-            onSnapshot, 
-            collection, 
-            query, 
-            where, 
-            getCountFromServer,
-            getDocs,
-            orderBy,
-            limit
-        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // Firebase Config
         const firebaseConfig = {
@@ -44,7 +30,6 @@
         const db = getFirestore(app);
 
         // ===== ALLOWED USER =====
-        // ⚠️ Tukar email ini kepada email awak sendiri
         const ALLOWED_EMAIL = "ikqram363@gmail.com";
 
         // ===== DOM ELEMENTS =====
@@ -65,20 +50,49 @@
         const currentTime = document.getElementById('currentTime');
         const currentDay = document.getElementById('currentDay');
 
-        // Stats Elements
+        // Stats - semua 0
         const totalTasks = document.getElementById('totalTasks');
         const totalNotis = document.getElementById('totalNotis');
         const totalBahan = document.getElementById('totalBahan');
         const totalAI = document.getElementById('totalAI');
 
-        // Badge Elements
-        const notifBadge = document.getElementById('notifBadge');
-        const tugasBadge = document.getElementById('tugasBadge');
-        const bahanBadge = document.getElementById('bahanBadge');
-        const aiBadge = document.getElementById('aiBadge');
-
-        // Content Cards Container
-        const contentCards = document.getElementById('contentCards');
+        // ===== DUMMY DATA =====
+        const dummyData = {
+            tasks: {
+                total: 8,
+                upcoming: [
+                    { title: 'Reka Bentuk UI/UX', due: '30 Jun 2026', priority: 'Tinggi' },
+                    { title: 'Laporan Latihan Industri', due: '15 Jul 2026', priority: 'Sederhana' },
+                    { title: 'Pembangunan Web', due: '22 Jul 2026', priority: 'Rendah' }
+                ]
+            },
+            notifications: {
+                total: 4,
+                list: [
+                    { message: 'Tugasan baru: Reka Bentuk UI/UX', time: '2 jam lalu' },
+                    { message: 'Peringatan: Mesyuarat kelas 3 petang', time: '5 jam lalu' },
+                    { message: 'Bahan kuliah baru diupload', time: 'Semalam' },
+                    { message: 'Jadual peperiksaan dikeluarkan', time: '2 hari lalu' }
+                ]
+            },
+            bahan: {
+                total: 6,
+                list: [
+                    { title: 'Nota Pangkalan Data', type: 'PDF', size: '2.4 MB' },
+                    { title: 'Slide Reka Bentuk Web', type: 'PPTX', size: '5.1 MB' },
+                    { title: 'Tutorial JavaScript', type: 'Video', size: '120 MB' },
+                    { title: 'Modul Rangkaian Komputer', type: 'PDF', size: '3.8 MB' }
+                ]
+            },
+            aiTools: {
+                total: 3,
+                list: [
+                    { name: 'ChatGPT', description: 'Bantu menjawab soalan' },
+                    { name: 'Grammarly', description: 'Semak tatabahasa' },
+                    { name: 'Gamma AI', description: 'Buat slide presentation' }
+                ]
+            }
+        };
 
         // ===== CHECK AUTH & ACCESS =====
         onAuthStateChanged(auth, async (user) => {
@@ -87,7 +101,6 @@
                 return;
             }
 
-            // Check if user is allowed
             if (user.email !== ALLOWED_EMAIL) {
                 alert('Akses ditolak. Email tidak dibenarkan.');
                 await signOut(auth);
@@ -95,15 +108,13 @@
                 return;
             }
 
-            // Load user data
             userEmail.textContent = user.email;
             await loadUserProfile(user.uid, user.email);
-            await loadAllStats(user.uid);
-            await loadContentCards(user.uid);
             startDateTime();
+            loadDummyData();
         });
 
-        // ===== LOAD USER PROFILE FROM FIRESTORE =====
+        // ===== LOAD USER PROFILE =====
         async function loadUserProfile(uid, email) {
             try {
                 const userRef = doc(db, "users", uid);
@@ -114,7 +125,6 @@
                     userName.textContent = data.displayName || 'Sila kemaskini nama';
                     userNameInput.value = data.displayName || '';
 
-                    // Real-time listener
                     onSnapshot(userRef, (doc) => {
                         if (doc.exists()) {
                             const data = doc.data();
@@ -229,7 +239,6 @@
             if (e.key === 'Escape') toggleEditMode(false);
         });
 
-        // ===== LOGOUT =====
         logoutBtn.addEventListener('click', async () => {
             try {
                 await signOut(auth);
@@ -264,192 +273,52 @@
             setInterval(update, 1000);
         }
 
-        // ===== LOAD ALL STATS FROM FIRESTORE =====
-        async function loadAllStats(uid) {
-            try {
-                // Get counts from each collection
-                const [tasksCount, notifCount, bahanCount, aiCount] = await Promise.all([
-                    getCollectionCount('tasks', uid),
-                    getCollectionCount('notifications', uid),
-                    getCollectionCount('bahan_kuliah', uid),
-                    getCollectionCount('ai_tools', uid)
-                ]);
+        // ===== LOAD DUMMY DATA (SEMUA 0) =====
+        function loadDummyData() {
+            // Quick Stats - reset ke 0
+            totalTasks.textContent = dummyData.tasks.total;
+            totalNotis.textContent = dummyData.notifications.total;
+            totalBahan.textContent = dummyData.bahan.total;
+            totalAI.textContent = dummyData.aiTools.total;
 
-                // Update stats numbers
-                totalTasks.textContent = tasksCount;
-                totalNotis.textContent = notifCount;
-                totalBahan.textContent = bahanCount;
-                totalAI.textContent = aiCount;
-
-                // Update badges
-                notifBadge.textContent = notifCount;
-                tugasBadge.textContent = tasksCount;
-                bahanBadge.textContent = bahanCount;
-                aiBadge.textContent = aiCount;
-
-                // Hide badges if 0
-                document.querySelectorAll('.nav-badge').forEach(badge => {
-                    if (badge.textContent === '0') {
-                        badge.style.display = 'none';
-                    } else {
-                        badge.style.display = 'inline-block';
-                    }
-                });
-
-                // Real-time listeners for each collection
-                listenToCollection('tasks', uid, (count) => {
-                    totalTasks.textContent = count;
-                    tugasBadge.textContent = count;
-                    if (count === 0) tugasBadge.style.display = 'none';
-                    else tugasBadge.style.display = 'inline-block';
-                });
-
-                listenToCollection('notifications', uid, (count) => {
-                    totalNotis.textContent = count;
-                    notifBadge.textContent = count;
-                    if (count === 0) notifBadge.style.display = 'none';
-                    else notifBadge.style.display = 'inline-block';
-                });
-
-                listenToCollection('bahan_kuliah', uid, (count) => {
-                    totalBahan.textContent = count;
-                    bahanBadge.textContent = count;
-                    if (count === 0) bahanBadge.style.display = 'none';
-                    else bahanBadge.style.display = 'inline-block';
-                });
-
-                listenToCollection('ai_tools', uid, (count) => {
-                    totalAI.textContent = count;
-                    aiBadge.textContent = count;
-                    if (count === 0) aiBadge.style.display = 'none';
-                    else aiBadge.style.display = 'inline-block';
-                });
-
-            } catch (error) {
-                console.error('Error loading stats:', error);
-            }
+            // Update content cards dengan dummy data
+            updateContentCards();
         }
 
-        // ===== GET COLLECTION COUNT =====
-        async function getCollectionCount(collectionName, uid) {
-            try {
-                const q = query(
-                    collection(db, collectionName),
-                    where('userId', '==', uid)
-                );
-                const snapshot = await getCountFromServer(q);
-                return snapshot.data().count;
-            } catch (error) {
-                console.error(`Error counting ${collectionName}:`, error);
-                return 0;
-            }
+        // ===== UPDATE CONTENT CARDS =====
+        function updateContentCards() {
+            const contentArea = document.querySelector('.content-cards');
+            
+            // Tugasan card
+            const taskCard = contentArea.children[0];
+            const taskCount = dummyData.tasks.upcoming.length;
+            const nextDue = dummyData.tasks.upcoming[0]?.due || 'Tiada tarikh';
+            taskCard.querySelector('p').textContent = `${taskCount} tugasan perlu dihantar`;
+            taskCard.querySelector('.card-footer').textContent = `📅 Tarikh akhir: ${nextDue}`;
+
+            // Notifikasi card
+            const notifCard = contentArea.children[1];
+            const unreadCount = dummyData.notifications.list.length;
+            const latestNotif = dummyData.notifications.list[0]?.time || 'Tiada notifikasi';
+            notifCard.querySelector('p').textContent = `${unreadCount} notifikasi belum dibaca`;
+            notifCard.querySelector('.card-footer').textContent = `🕐 Terkini: ${latestNotif}`;
+
+            // Bahan card
+            const bahanCard = contentArea.children[2];
+            const bahanCount = dummyData.bahan.list.length;
+            const latestBahan = dummyData.bahan.list[0]?.title || 'Tiada bahan';
+            bahanCard.querySelector('p').textContent = `${bahanCount} bahan kuliah tersedia`;
+            bahanCard.querySelector('.card-footer').textContent = `📁 Terkini: ${latestBahan}`;
+
+            // AI Tools card
+            const aiCard = contentArea.children[3];
+            const aiCount = dummyData.aiTools.list.length;
+            const latestAI = dummyData.aiTools.list[0]?.name || 'Tiada AI tools';
+            aiCard.querySelector('p').textContent = `${aiCount} AI tools sedia digunakan`;
+            aiCard.querySelector('.card-footer').textContent = `⚡ Terkini: ${latestAI}`;
         }
 
-        // ===== REAL-TIME LISTENER FOR COLLECTION =====
-        function listenToCollection(collectionName, uid, callback) {
-            const q = query(
-                collection(db, collectionName),
-                where('userId', '==', uid)
-            );
-
-            onSnapshot(q, (snapshot) => {
-                callback(snapshot.size);
-            }, (error) => {
-                console.error(`Error listening to ${collectionName}:`, error);
-            });
-        }
-
-        // ===== LOAD CONTENT CARDS FROM FIRESTORE =====
-        async function loadContentCards(uid) {
-            try {
-                // Get recent items from each collection
-                const [recentTasks, recentNotif, recentBahan, recentAI] = await Promise.all([
-                    getRecentItems('tasks', uid),
-                    getRecentItems('notifications', uid),
-                    getRecentItems('bahan_kuliah', uid),
-                    getRecentItems('ai_tools', uid)
-                ]);
-
-                const cards = [
-                    {
-                        icon: '📝',
-                        title: 'Tugasan Terkini',
-                        description: recentTasks.length > 0 ? recentTasks[0].title || 'Tiada tugasan' : 'Tiada tugasan',
-                        footer: recentTasks.length > 0 ? `📅 ${formatDate(recentTasks[0].dueDate)}` : 'Tiada tugasan'
-                    },
-                    {
-                        icon: '📢',
-                        title: 'Notifikasi',
-                        description: recentNotif.length > 0 ? recentNotif[0].message || 'Tiada notifikasi' : 'Tiada notifikasi',
-                        footer: recentNotif.length > 0 ? `🕐 ${formatDate(recentNotif[0].createdAt)}` : 'Tiada notifikasi'
-                    },
-                    {
-                        icon: '📖',
-                        title: 'Bahan Kuliah',
-                        description: recentBahan.length > 0 ? recentBahan[0].title || 'Tiada bahan' : 'Tiada bahan',
-                        footer: recentBahan.length > 0 ? `📁 ${recentBahan[0].category || 'Umum'}` : 'Tiada bahan'
-                    },
-                    {
-                        icon: '🧠',
-                        title: 'AI Tools',
-                        description: recentAI.length > 0 ? recentAI[0].name || 'Tiada AI tools' : 'Tiada AI tools',
-                        footer: recentAI.length > 0 ? `⚡ ${recentAI[0].status || 'Sedia'}` : 'Tiada AI tools'
-                    }
-                ];
-
-                renderContentCards(cards);
-
-            } catch (error) {
-                console.error('Error loading content cards:', error);
-            }
-        }
-
-        // ===== GET RECENT ITEMS =====
-        async function getRecentItems(collectionName, uid, limitCount = 1) {
-            try {
-                const q = query(
-                    collection(db, collectionName),
-                    where('userId', '==', uid),
-                    orderBy('createdAt', 'desc'),
-                    limit(limitCount)
-                );
-                const snapshot = await getDocs(q);
-                return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            } catch (error) {
-                console.error(`Error getting recent ${collectionName}:`, error);
-                return [];
-            }
-        }
-
-        // ===== RENDER CONTENT CARDS =====
-        function renderContentCards(cards) {
-            contentCards.innerHTML = cards.map(card => `
-                <div class="content-card">
-                    <div class="card-icon">${card.icon}</div>
-                    <h4>${card.title}</h4>
-                    <p>${card.description}</p>
-                    <div class="card-footer">${card.footer}</div>
-                </div>
-            `).join('');
-        }
-
-        // ===== FORMAT DATE =====
-        function formatDate(dateString) {
-            if (!dateString) return 'Tarikh tidak tersedia';
-            try {
-                const date = new Date(dateString);
-                if (isNaN(date.getTime())) return 'Tarikh tidak sah';
-                return date.toLocaleDateString('ms-MY', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric'
-                });
-            } catch (e) {
-                return 'Tarikh tidak tersedia';
-            }
-        }
-
-        // ===== NOTIFICATION FUNCTION =====
+        // ===== NOTIFICATION =====
         function showNotification(message, type = 'info') {
             const notification = document.createElement('div');
             notification.className = `notification ${type}`;
@@ -467,11 +336,10 @@
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 const page = this.dataset.page;
-                showNotification(`Navigasi ke: ${page}`, 'info');
+                showNotification(`📌 Navigasi ke: ${page}`, 'info');
             });
         });
 
-        // ===== EXPOSE FOR DEBUGGING =====
         window.auth = auth;
         window.db = db;
 
@@ -975,7 +843,6 @@
             font-size: 11px;
             color: #667eea;
             font-weight: 600;
-            display: none;
         }
 
         /* ===== CONTENT AREA ===== */
@@ -1069,7 +936,7 @@
             }
 
             .nav-btn .nav-badge {
-                display: none !important;
+                display: none;
             }
         }
 
@@ -1153,7 +1020,7 @@
 </head>
 <body>
 
-    <!-- ===== SETUP MODAL (Pertama Kali Login) ===== -->
+    <!-- ===== SETUP MODAL ===== -->
     <div class="modal-overlay" id="setupModal">
         <div class="modal-box">
             <span class="modal-icon">👋</span>
@@ -1199,7 +1066,7 @@
                     <button class="btn-save" id="saveNameBtn">💾 Simpan</button>
                     <button class="btn-cancel" id="cancelNameBtn">✖️ Batal</button>
                 </div>
-                <div class="email-display">📧 ikqram363@gmail.com</div>
+                <div class="email-display" id="emailDisplay">📧 loading...</div>
             </div>
             <div class="datetime-display">
                 <div class="time" id="currentTime">--:--:--</div>
@@ -1208,7 +1075,7 @@
             </div>
         </div>
 
-        <!-- ===== QUICK STATS ===== -->
+        <!-- ===== QUICK STATS (SEMUA 0) ===== -->
         <div class="quick-stats">
             <div class="stat-card">
                 <span class="stat-icon">📋</span>
@@ -1247,13 +1114,13 @@
                 <button class="nav-btn" data-page="notifikasi">
                     <span class="nav-icon">🔔</span>
                     Notifikasi
-                    <span class="nav-badge" id="notifBadge">0</span>
+                    <span class="nav-badge">4</span>
                 </button>
 
                 <button class="nav-btn" data-page="tugasan">
                     <span class="nav-icon">📋</span>
                     Tugasan
-                    <span class="nav-badge" id="tugasBadge">0</span>
+                    <span class="nav-badge">8</span>
                 </button>
 
                 <button class="nav-btn" data-page="jadual">
@@ -1264,13 +1131,13 @@
                 <button class="nav-btn" data-page="bahan">
                     <span class="nav-icon">📚</span>
                     Bahan Kuliah
-                    <span class="nav-badge" id="bahanBadge">0</span>
+                    <span class="nav-badge">6</span>
                 </button>
 
                 <button class="nav-btn" data-page="ai">
                     <span class="nav-icon">🤖</span>
                     AI Tools
-                    <span class="nav-badge" id="aiBadge">0</span>
+                    <span class="nav-badge">3</span>
                 </button>
             </div>
 
@@ -1281,8 +1148,38 @@
                     <p>Selamat datang ke MYPOLY Dashboard peribadi anda. Semua data di sini adalah khusus untuk anda.</p>
                 </div>
 
-                <div class="content-cards" id="contentCards">
-                    <!-- Content cards will be loaded from Firestore -->
+                <div class="content-cards">
+                    <!-- Tugasan Card -->
+                    <div class="content-card">
+                        <div class="card-icon">📝</div>
+                        <h4>Tugasan Terkini</h4>
+                        <p>0 tugasan perlu dihantar</p>
+                        <div class="card-footer">📅 Tiada tarikh akhir</div>
+                    </div>
+
+                    <!-- Notifikasi Card -->
+                    <div class="content-card">
+                        <div class="card-icon">📢</div>
+                        <h4>Notifikasi</h4>
+                        <p>0 notifikasi belum dibaca</p>
+                        <div class="card-footer">🕐 Tiada notifikasi</div>
+                    </div>
+
+                    <!-- Bahan Kuliah Card -->
+                    <div class="content-card">
+                        <div class="card-icon">📖</div>
+                        <h4>Bahan Kuliah</h4>
+                        <p>0 bahan kuliah tersedia</p>
+                        <div class="card-footer">📁 Tiada bahan</div>
+                    </div>
+
+                    <!-- AI Tools Card -->
+                    <div class="content-card">
+                        <div class="card-icon">🧠</div>
+                        <h4>AI Tools</h4>
+                        <p>0 AI tools sedia digunakan</p>
+                        <div class="card-footer">⚡ Tiada tools</div>
+                    </div>
                 </div>
             </div>
 
