@@ -41,7 +41,8 @@
         const classForm = document.getElementById('classForm');
         const classModalTitle = document.getElementById('classModalTitle');
         const classDay = document.getElementById('classDay');
-        const classTime = document.getElementById('classTime');
+        const classTimeStart = document.getElementById('classTimeStart');
+        const classTimeEnd = document.getElementById('classTimeEnd');
         const classSubject = document.getElementById('classSubject');
         const classCode = document.getElementById('classCode');
         const classLecturer = document.getElementById('classLecturer');
@@ -60,7 +61,8 @@
         const scheduleModalTitle = document.getElementById('scheduleModalTitle');
         const scheduleDay = document.getElementById('scheduleDay');
         const scheduleDate = document.getElementById('scheduleDate');
-        const scheduleTime = document.getElementById('scheduleTime');
+        const scheduleTimeStart = document.getElementById('scheduleTimeStart');
+        const scheduleTimeEnd = document.getElementById('scheduleTimeEnd');
         const scheduleSubject = document.getElementById('scheduleSubject');
         const scheduleCode = document.getElementById('scheduleCode');
         const scheduleLecturer = document.getElementById('scheduleLecturer');
@@ -72,7 +74,6 @@
         const scheduleDelete = document.getElementById('scheduleDelete');
         const scheduleSubmit = document.getElementById('scheduleSubmit');
 
-        const currentWeekDisplay = document.getElementById('currentWeekDisplay');
         const prevWeekBtn = document.getElementById('prevWeekBtn');
         const nextWeekBtn = document.getElementById('nextWeekBtn');
         const weekRange = document.getElementById('weekRange');
@@ -91,25 +92,21 @@
         const weekDays = ['Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat'];
         const allDays = ['Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu', 'Ahad'];
 
-        // Class times: 7:30 AM - 6:00 PM (30 min intervals)
-        const classTimes = [];
-        for (let h = 7; h < 18; h++) {
-            for (let m = 0; m < 60; m += 30) {
-                const hour = h < 10 ? `0${h}` : `${h}`;
-                const min = m === 0 ? '00' : '30';
-                classTimes.push(`${hour}:${min}`);
-            }
-        }
-
-        // Schedule times: 24 hours
-        const scheduleTimes = [];
+        // Generate time options (30 min intervals)
+        const timeOptions = [];
         for (let h = 0; h < 24; h++) {
             for (let m = 0; m < 60; m += 30) {
                 const hour = h < 10 ? `0${h}` : `${h}`;
                 const min = m === 0 ? '00' : '30';
-                scheduleTimes.push(`${hour}:${min}`);
+                timeOptions.push(`${hour}:${min}`);
             }
         }
+
+        // Class times: 7:30 AM - 6:00 PM
+        const classTimeOptions = timeOptions.filter(t => {
+            const hour = parseInt(t.split(':')[0]);
+            return hour >= 7 && hour < 18;
+        });
 
         // ===== AUTH CHECK =====
         onAuthStateChanged(auth, async (user) => {
@@ -151,7 +148,7 @@
             window.location.href = 'index.html';
         });
 
-        // ===== LOAD CLASS DATA (Berulang) =====
+        // ===== LOAD CLASS DATA =====
         async function loadClassData() {
             if (!currentUser) return;
             try {
@@ -163,7 +160,7 @@
                 classData = {};
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const key = `${data.day}-${data.time}`;
+                    const key = `${data.day}-${data.timeStart}`;
                     classData[key] = { id: doc.id, ...data };
                 });
             } catch (error) {
@@ -171,7 +168,7 @@
             }
         }
 
-        // ===== LOAD SCHEDULE DATA (Dengan Tarikh) =====
+        // ===== LOAD SCHEDULE DATA =====
         async function loadScheduleData() {
             if (!currentUser) return;
             try {
@@ -183,7 +180,7 @@
                 scheduleData = {};
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const key = `${data.date}-${data.day}-${data.time}`;
+                    const key = `${data.date}-${data.day}-${data.timeStart}`;
                     scheduleData[key] = { id: doc.id, ...data };
                 });
             } catch (error) {
@@ -191,10 +188,10 @@
             }
         }
 
-        // ===== GET DATE FOR DAY =====
+        // ===== GET DATE =====
         function getDateForDay(day, offset = 0) {
             const now = new Date();
-            const currentDay = now.getDay(); // 0=Sunday, 1=Monday
+            const currentDay = now.getDay();
             const dayMap = { 'Ahad': 0, 'Isnin': 1, 'Selasa': 2, 'Rabu': 3, 'Khamis': 4, 'Jumaat': 5, 'Sabtu': 6 };
             const targetDay = dayMap[day];
             let diff = targetDay - currentDay + (offset * 7);
@@ -220,7 +217,7 @@
             return dates;
         }
 
-        // ===== FORMAT TIME DISPLAY =====
+        // ===== FORMAT TIME =====
         function formatTimeDisplay(time) {
             const [h, m] = time.split(':');
             const hour = parseInt(h);
@@ -230,7 +227,20 @@
             return `${hour - 12}:${m} PM`;
         }
 
-        // ===== RENDER CLASS GRID (Berulang) =====
+        function formatTimeRange(start, end) {
+            return `${formatTimeDisplay(start)} - ${formatTimeDisplay(end)}`;
+        }
+
+        // ===== GET NEXT TIME SLOT =====
+        function getNextTimeSlot(time) {
+            const index = timeOptions.indexOf(time);
+            if (index < timeOptions.length - 1) {
+                return timeOptions[index + 1];
+            }
+            return time;
+        }
+
+        // ===== RENDER CLASS GRID =====
         function renderClassGrid() {
             const grid = document.getElementById('classGrid');
             grid.innerHTML = '';
@@ -248,31 +258,36 @@
             `;
             grid.appendChild(headerRow);
 
-            // Time rows
-            classTimes.forEach(time => {
+            // Time rows - skip last slot because we need pairs
+            for (let i = 0; i < classTimeOptions.length - 1; i++) {
+                const time = classTimeOptions[i];
+                const nextTime = classTimeOptions[i + 1];
                 const row = document.createElement('div');
                 row.className = 'grid-row';
 
                 const timeLabel = document.createElement('div');
                 timeLabel.className = 'time-label';
-                timeLabel.textContent = formatTimeDisplay(time);
+                timeLabel.textContent = formatTimeRange(time, nextTime);
                 row.appendChild(timeLabel);
 
                 weekDays.forEach(day => {
                     const cell = document.createElement('div');
                     cell.className = 'grid-cell';
                     cell.dataset.day = day;
-                    cell.dataset.time = time;
+                    cell.dataset.timeStart = time;
+                    cell.dataset.timeEnd = nextTime;
 
                     const key = `${day}-${time}`;
                     if (classData[key]) {
                         const data = classData[key];
+                        const duration = `${formatTimeDisplay(data.timeStart)} - ${formatTimeDisplay(data.timeEnd || getNextTimeSlot(data.timeStart))}`;
                         cell.innerHTML = `
                             <div class="schedule-item" style="background: ${data.color || '#667eea'};">
                                 <div class="subject-code">${data.subjectCode || ''}</div>
                                 <div class="subject-name">${data.subjectName}</div>
                                 <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
                                 <div class="room-number">🏫 ${data.room || ''}</div>
+                                <div class="time-duration">🕐 ${duration}</div>
                                 <button class="delete-slot" data-id="${data.id}">✕</button>
                             </div>
                         `;
@@ -282,7 +297,7 @@
                         });
                         cell.addEventListener('click', () => editClass(data.id));
                     } else {
-                        cell.addEventListener('click', () => openClassModal(day, time));
+                        cell.addEventListener('click', () => openClassModal(day, time, nextTime));
                         cell.innerHTML = `<span class="add-hint">+</span>`;
                     }
 
@@ -290,10 +305,10 @@
                 });
 
                 grid.appendChild(row);
-            });
+            }
         }
 
-        // ===== RENDER SCHEDULE GRID (Dengan Tarikh) =====
+        // ===== RENDER SCHEDULE GRID =====
         function renderScheduleGrid() {
             const grid = document.getElementById('scheduleGrid');
             grid.innerHTML = '';
@@ -314,14 +329,16 @@
             `;
             grid.appendChild(headerRow);
 
-            // Time rows
-            scheduleTimes.forEach(time => {
+            // Time rows - skip last slot
+            for (let i = 0; i < timeOptions.length - 1; i++) {
+                const time = timeOptions[i];
+                const nextTime = timeOptions[i + 1];
                 const row = document.createElement('div');
                 row.className = 'grid-row';
 
                 const timeLabel = document.createElement('div');
                 timeLabel.className = 'time-label';
-                timeLabel.textContent = formatTimeDisplay(time);
+                timeLabel.textContent = formatTimeRange(time, nextTime);
                 row.appendChild(timeLabel);
 
                 allDays.forEach(day => {
@@ -329,18 +346,21 @@
                     cell.className = 'grid-cell';
                     const dateStr = formatDate(weekDates[day]);
                     cell.dataset.day = day;
-                    cell.dataset.time = time;
+                    cell.dataset.timeStart = time;
+                    cell.dataset.timeEnd = nextTime;
                     cell.dataset.date = dateStr;
 
                     const key = `${dateStr}-${day}-${time}`;
                     if (scheduleData[key]) {
                         const data = scheduleData[key];
+                        const duration = `${formatTimeDisplay(data.timeStart)} - ${formatTimeDisplay(data.timeEnd || getNextTimeSlot(data.timeStart))}`;
                         cell.innerHTML = `
                             <div class="schedule-item" style="background: ${data.color || '#667eea'};">
                                 <div class="subject-code">${data.subjectCode || ''}</div>
                                 <div class="subject-name">${data.subjectName}</div>
                                 <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
                                 <div class="room-number">🏫 ${data.room || ''}</div>
+                                <div class="time-duration">🕐 ${duration}</div>
                                 <button class="delete-slot" data-id="${data.id}">✕</button>
                             </div>
                         `;
@@ -350,7 +370,7 @@
                         });
                         cell.addEventListener('click', () => editSchedule(data.id));
                     } else {
-                        cell.addEventListener('click', () => openScheduleModal(day, time, weekDates[day]));
+                        cell.addEventListener('click', () => openScheduleModal(day, time, nextTime, weekDates[day]));
                         cell.innerHTML = `<span class="add-hint">+</span>`;
                     }
 
@@ -358,13 +378,15 @@
                 });
 
                 grid.appendChild(row);
-            });
+            }
         }
 
         // ===== CLASS CRUD =====
-        function openClassModal(day, time, editData = null) {
+        function openClassModal(day, timeStart, timeEnd, editData = null) {
             classDay.value = day;
-            classTime.value = time;
+            classTimeStart.value = timeStart;
+            classTimeEnd.value = timeEnd || getNextTimeSlot(timeStart);
+
             if (editData) {
                 classModalTitle.textContent = '✏️ Edit Jadual Kelas';
                 classSubject.value = editData.subjectName || '';
@@ -390,7 +412,8 @@
         function editClass(id) {
             const key = Object.keys(classData).find(k => classData[k].id === id);
             if (key) {
-                openClassModal(classData[key].day, classData[key].time, classData[key]);
+                const data = classData[key];
+                openClassModal(data.day, data.timeStart, data.timeEnd || getNextTimeSlot(data.timeStart), data);
             }
         }
 
@@ -411,10 +434,14 @@
             e.preventDefault();
             if (!currentUser) return;
 
+            const timeStart = classTimeStart.value;
+            const timeEnd = classTimeEnd.value || getNextTimeSlot(timeStart);
+
             const data = {
                 userId: currentUser.uid,
                 day: classDay.value,
-                time: classTime.value,
+                timeStart: timeStart,
+                timeEnd: timeEnd,
                 subjectName: classSubject.value.trim(),
                 subjectCode: classCode.value.trim(),
                 lecturer: classLecturer.value.trim(),
@@ -422,7 +449,7 @@
                 color: classColor.value,
                 notification: classNotif.checked,
                 updatedAt: new Date().toISOString(),
-                type: 'class' // Untuk bezakan dengan schedule
+                type: 'class'
             };
 
             try {
@@ -441,7 +468,6 @@
                 await loadClassData();
                 renderClassGrid();
 
-                // Auto-add to schedule for current week
                 await autoAddToSchedule(data);
 
                 if (data.notification) {
@@ -461,9 +487,8 @@
             const date = weekDates[classData.day];
             const dateStr = formatDate(date);
 
-            const key = `${dateStr}-${classData.day}-${classData.time}`;
+            const key = `${dateStr}-${classData.day}-${classData.timeStart}`;
 
-            // Check if already exists
             if (scheduleData[key]) return;
 
             try {
@@ -471,7 +496,8 @@
                     userId: currentUser.uid,
                     day: classData.day,
                     date: dateStr,
-                    time: classData.time,
+                    timeStart: classData.timeStart,
+                    timeEnd: classData.timeEnd,
                     subjectName: classData.subjectName,
                     subjectCode: classData.subjectCode,
                     lecturer: classData.lecturer,
@@ -489,10 +515,12 @@
         }
 
         // ===== SCHEDULE CRUD =====
-        function openScheduleModal(day, time, date, editData = null) {
+        function openScheduleModal(day, timeStart, timeEnd, date, editData = null) {
             scheduleDay.value = day;
             scheduleDate.value = formatDate(date);
-            scheduleTime.value = time;
+            scheduleTimeStart.value = timeStart;
+            scheduleTimeEnd.value = timeEnd || getNextTimeSlot(timeStart);
+
             if (editData) {
                 scheduleModalTitle.textContent = '✏️ Edit Jadual Perancangan';
                 scheduleSubject.value = editData.subjectName || '';
@@ -521,7 +549,7 @@
                 const data = scheduleData[key];
                 const dateParts = data.date.split('/');
                 const date = new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
-                openScheduleModal(data.day, data.time, date, data);
+                openScheduleModal(data.day, data.timeStart, data.timeEnd || getNextTimeSlot(data.timeStart), date, data);
             }
         }
 
@@ -542,11 +570,15 @@
             e.preventDefault();
             if (!currentUser) return;
 
+            const timeStart = scheduleTimeStart.value;
+            const timeEnd = scheduleTimeEnd.value || getNextTimeSlot(timeStart);
+
             const data = {
                 userId: currentUser.uid,
                 day: scheduleDay.value,
                 date: scheduleDate.value,
-                time: scheduleTime.value,
+                timeStart: timeStart,
+                timeEnd: timeEnd,
                 subjectName: scheduleSubject.value.trim(),
                 subjectCode: scheduleCode.value.trim(),
                 lecturer: scheduleLecturer.value.trim(),
@@ -590,9 +622,11 @@
                 return;
             }
 
+            const timeRange = `${formatTimeDisplay(data.timeStart)} - ${formatTimeDisplay(data.timeEnd || getNextTimeSlot(data.timeStart))}`;
+
             if (Notification.permission === "granted") {
                 new Notification('📚 MYPOLY - Peringatan Kelas', {
-                    body: `🕐 ${formatTimeDisplay(data.time)}\n📖 ${data.subjectName} (${data.subjectCode})\n👨‍🏫 ${data.lecturer}\n🏫 ${data.room}`,
+                    body: `🕐 ${timeRange}\n📖 ${data.subjectName} (${data.subjectCode})\n👨‍🏫 ${data.lecturer}\n🏫 ${data.room}`,
                     icon: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQJPPtvSjk6_fnQby9h0pJi3dMLhp-x1BHV2g&s'
                 });
             } else if (Notification.permission !== "denied") {
@@ -650,10 +684,10 @@
         scheduleModal.addEventListener('click', (e) => { if (e.target === scheduleModal) closeScheduleModal(); });
 
         // ===== ADD BUTTONS =====
-        addClassBtn.addEventListener('click', () => openClassModal('Isnin', '08:00'));
+        addClassBtn.addEventListener('click', () => openClassModal('Isnin', '08:00', '08:30'));
         addScheduleBtn.addEventListener('click', () => {
             const weekDates = getWeekDates(currentWeekOffset);
-            openScheduleModal('Isnin', '08:00', weekDates['Isnin']);
+            openScheduleModal('Isnin', '08:00', '08:30', weekDates['Isnin']);
         });
 
         // ===== KEYBOARD SHORTCUTS =====
@@ -664,7 +698,7 @@
             }
         });
 
-        // ===== CHECK NOTIFICATIONS EVERY MINUTE =====
+        // ===== CHECK NOTIFICATIONS =====
         setInterval(() => {
             const now = new Date();
             const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -675,7 +709,7 @@
             Object.values(scheduleData).forEach(data => {
                 if (data.day === currentDay &&
                     data.date === dateStr &&
-                    data.time === currentTime &&
+                    data.timeStart === currentTime &&
                     data.notification) {
                     sendPushNotification(data);
                 }
@@ -920,16 +954,14 @@
             margin-bottom: 2px;
         }
 
-        /* Class grid: 8 columns (time + 5 days) */
         #classGrid .grid-header,
         #classGrid .grid-row {
-            grid-template-columns: 80px repeat(5, 1fr);
+            grid-template-columns: 110px repeat(5, 1fr);
         }
 
-        /* Schedule grid: 8 columns (time + 7 days) */
         #scheduleGrid .grid-header,
         #scheduleGrid .grid-row {
-            grid-template-columns: 80px repeat(7, 1fr);
+            grid-template-columns: 110px repeat(7, 1fr);
         }
 
         .grid-header {
@@ -965,17 +997,17 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 11px;
-            color: rgba(255, 255, 255, 0.3);
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.4);
             padding: 4px;
             background: rgba(255, 255, 255, 0.02);
             border-radius: 6px;
-            font-weight: 500;
-            letter-spacing: 0.5px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
         }
 
         .grid-cell {
-            min-height: 50px;
+            min-height: 55px;
             background: rgba(255, 255, 255, 0.02);
             border-radius: 6px;
             border: 1px solid rgba(255, 255, 255, 0.03);
@@ -1031,7 +1063,7 @@
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
         }
         .schedule-item .subject-code {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 700;
             color: rgba(255, 255, 255, 0.7);
             letter-spacing: 0.5px;
@@ -1043,12 +1075,22 @@
             line-height: 1.2;
         }
         .schedule-item .lecturer-name {
-            font-size: 10px;
+            font-size: 9px;
             color: rgba(255, 255, 255, 0.6);
         }
         .schedule-item .room-number {
-            font-size: 10px;
+            font-size: 9px;
             color: rgba(255, 255, 255, 0.5);
+        }
+        .schedule-item .time-duration {
+            font-size: 8px;
+            color: rgba(255, 255, 255, 0.5);
+            background: rgba(0, 0, 0, 0.2);
+            padding: 0 6px;
+            border-radius: 4px;
+            display: inline-block;
+            width: fit-content;
+            margin-top: 1px;
         }
         .schedule-item .delete-slot {
             position: absolute;
@@ -1070,20 +1112,6 @@
         .schedule-item .delete-slot:hover {
             background: rgba(255, 71, 87, 0.6);
             color: #ffffff;
-        }
-
-        /* ===== BADGE UNTUK JADUAL KELAS ===== */
-        .class-badge {
-            position: absolute;
-            top: -6px;
-            right: -6px;
-            background: #2ed573;
-            color: #fff;
-            font-size: 8px;
-            padding: 1px 6px;
-            border-radius: 10px;
-            font-weight: 700;
-            text-transform: uppercase;
         }
 
         /* ===== MODAL ===== */
@@ -1251,11 +1279,11 @@
             }
             #classGrid .grid-header,
             #classGrid .grid-row {
-                grid-template-columns: 60px repeat(5, 1fr);
+                grid-template-columns: 90px repeat(5, 1fr);
             }
             #scheduleGrid .grid-header,
             #scheduleGrid .grid-row {
-                grid-template-columns: 60px repeat(7, 1fr);
+                grid-template-columns: 90px repeat(7, 1fr);
             }
             .schedule-wrapper {
                 overflow-x: auto;
@@ -1284,12 +1312,12 @@
             }
             #classGrid .grid-header,
             #classGrid .grid-row {
-                grid-template-columns: 50px repeat(5, 1fr);
+                grid-template-columns: 80px repeat(5, 1fr);
                 min-width: 500px;
             }
             #scheduleGrid .grid-header,
             #scheduleGrid .grid-row {
-                grid-template-columns: 50px repeat(7, 1fr);
+                grid-template-columns: 80px repeat(7, 1fr);
                 min-width: 600px;
             }
             .grid-cell {
@@ -1301,7 +1329,8 @@
             }
             .schedule-item .subject-code,
             .schedule-item .lecturer-name,
-            .schedule-item .room-number {
+            .schedule-item .room-number,
+            .schedule-item .time-duration {
                 font-size: 8px;
             }
             .day-header .day-name {
@@ -1332,7 +1361,8 @@
             }
             .schedule-item .subject-code,
             .schedule-item .lecturer-name,
-            .schedule-item .room-number {
+            .schedule-item .room-number,
+            .schedule-item .time-duration {
                 display: none;
             }
         }
@@ -1412,7 +1442,11 @@
                         </div>
                         <div class="form-group">
                             <label>🕐 Masa</label>
-                            <select id="classTime" required></select>
+                            <div class="form-row" style="grid-template-columns:1fr 1fr; gap:6px;">
+                                <select id="classTimeStart" required></select>
+                                <span style="color:rgba(255,255,255,0.3); text-align:center; align-self:center;">-</span>
+                                <select id="classTimeEnd" required></select>
+                            </div>
                         </div>
                     </div>
                     <div class="form-group">
@@ -1483,7 +1517,11 @@
                     </div>
                     <div class="form-group">
                         <label>🕐 Masa</label>
-                        <select id="scheduleTime" required></select>
+                        <div class="form-row" style="grid-template-columns:1fr 1fr; gap:6px;">
+                            <select id="scheduleTimeStart" required></select>
+                            <span style="color:rgba(255,255,255,0.3); text-align:center; align-self:center;">-</span>
+                            <select id="scheduleTimeEnd" required></select>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>📖 Nama Subjek</label>
@@ -1530,40 +1568,54 @@
     <script>
         // ===== POPULATE TIME DROPDOWNS =====
         function populateTimeSelects() {
-            // Class times: 7:30 AM - 6:00 PM
-            const classTimes = [];
-            for (let h = 7; h < 18; h++) {
-                for (let m = 0; m < 60; m += 30) {
-                    const hour = h < 10 ? `0${h}` : `${h}`;
-                    const min = m === 0 ? '00' : '30';
-                    classTimes.push(`${hour}:${min}`);
-                }
-            }
-
-            const classTimeSelect = document.getElementById('classTime');
-            classTimes.forEach(time => {
-                const option = document.createElement('option');
-                option.value = time;
-                option.textContent = formatTimeDisplay(time);
-                classTimeSelect.appendChild(option);
-            });
-
-            // Schedule times: 24 hours
-            const scheduleTimes = [];
+            const timeOptions = [];
             for (let h = 0; h < 24; h++) {
                 for (let m = 0; m < 60; m += 30) {
                     const hour = h < 10 ? `0${h}` : `${h}`;
                     const min = m === 0 ? '00' : '30';
-                    scheduleTimes.push(`${hour}:${min}`);
+                    timeOptions.push(`${hour}:${min}`);
                 }
             }
 
-            const scheduleTimeSelect = document.getElementById('scheduleTime');
-            scheduleTimes.forEach(time => {
-                const option = document.createElement('option');
-                option.value = time;
-                option.textContent = formatTimeDisplay(time);
-                scheduleTimeSelect.appendChild(option);
+            // Class times: 7:30 AM - 6:00 PM
+            const classTimeOptions = timeOptions.filter(t => {
+                const hour = parseInt(t.split(':')[0]);
+                return hour >= 7 && hour < 18;
+            });
+
+            function populateSelect(selectId, options, selectedValue) {
+                const select = document.getElementById(selectId);
+                select.innerHTML = '';
+                options.forEach(time => {
+                    const option = document.createElement('option');
+                    option.value = time;
+                    option.textContent = formatTimeDisplay(time);
+                    if (time === selectedValue) option.selected = true;
+                    select.appendChild(option);
+                });
+            }
+
+            // Class time dropdowns
+            populateSelect('classTimeStart', classTimeOptions, '08:00');
+            populateSelect('classTimeEnd', classTimeOptions, '08:30');
+
+            // Schedule time dropdowns (24 hours)
+            populateSelect('scheduleTimeStart', timeOptions, '08:00');
+            populateSelect('scheduleTimeEnd', timeOptions, '08:30');
+
+            // Auto-set end time when start time changes
+            document.getElementById('classTimeStart').addEventListener('change', function() {
+                const currentIndex = classTimeOptions.indexOf(this.value);
+                if (currentIndex < classTimeOptions.length - 1) {
+                    document.getElementById('classTimeEnd').value = classTimeOptions[currentIndex + 1];
+                }
+            });
+
+            document.getElementById('scheduleTimeStart').addEventListener('change', function() {
+                const currentIndex = timeOptions.indexOf(this.value);
+                if (currentIndex < timeOptions.length - 1) {
+                    document.getElementById('scheduleTimeEnd').value = timeOptions[currentIndex + 1];
+                }
             });
         }
 
@@ -1578,11 +1630,13 @@
 
         populateTimeSelects();
 
-        // Make functions available globally for modal
-        window.openClassModal = function(day, time, editData) {
+        // ===== MAKE FUNCTIONS GLOBAL =====
+        window.openClassModal = function(day, timeStart, timeEnd, editData) {
             const modal = document.getElementById('classModal');
             document.getElementById('classDay').value = day;
-            document.getElementById('classTime').value = time;
+            document.getElementById('classTimeStart').value = timeStart;
+            document.getElementById('classTimeEnd').value = timeEnd || getNextTimeSlot(timeStart);
+
             if (editData) {
                 document.getElementById('classModalTitle').textContent = '✏️ Edit Jadual Kelas';
                 document.getElementById('classSubject').value = editData.subjectName || '';
@@ -1605,11 +1659,12 @@
             document.getElementById('classSubject').focus();
         };
 
-        window.openScheduleModal = function(day, time, date, editData) {
+        window.openScheduleModal = function(day, timeStart, timeEnd, date, editData) {
             const modal = document.getElementById('scheduleModal');
             document.getElementById('scheduleDay').value = day;
-            document.getElementById('scheduleTime').value = time;
             document.getElementById('scheduleDate').value = formatDateDisplay(date);
+            document.getElementById('scheduleTimeStart').value = timeStart;
+            document.getElementById('scheduleTimeEnd').value = timeEnd || getNextTimeSlot(timeStart);
 
             if (editData) {
                 document.getElementById('scheduleModalTitle').textContent = '✏️ Edit Jadual Perancangan';
@@ -1637,6 +1692,22 @@
             if (!date) return '';
             if (typeof date === 'string') return date;
             return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+        }
+
+        function getNextTimeSlot(time) {
+            const timeOptions = [];
+            for (let h = 0; h < 24; h++) {
+                for (let m = 0; m < 60; m += 30) {
+                    const hour = h < 10 ? `0${h}` : `${h}`;
+                    const min = m === 0 ? '00' : '30';
+                    timeOptions.push(`${hour}:${min}`);
+                }
+            }
+            const index = timeOptions.indexOf(time);
+            if (index < timeOptions.length - 1) {
+                return timeOptions[index + 1];
+            }
+            return time;
         }
     </script>
 
