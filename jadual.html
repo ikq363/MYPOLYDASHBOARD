@@ -1,0 +1,1644 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jadual Perancangan - MYPOLY</title>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
+        import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, addDoc, getDocs, query, where, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // Firebase Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyAcTdgGAEPnUEP87N_BuLBxBmSzo1NOVHY",
+            authDomain: "mypoly-dashboard.firebaseapp.com",
+            projectId: "mypoly-dashboard",
+            storageBucket: "mypoly-dashboard.firebasestorage.app",
+            messagingSenderId: "829710608275",
+            appId: "1:829710608275:web:f2c68b3c6b181cfc256a66",
+            measurementId: "G-HTZXCGB1ZB"
+        };
+
+        // Initialize
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const ALLOWED_EMAIL = "ikqram363@gmail.com";
+
+        // ===== DOM ELEMENTS =====
+        const userName = document.getElementById('userName');
+        const logoutBtn = document.getElementById('logoutBtn');
+
+        // Jadual Kelas (Berulang)
+        const classGrid = document.getElementById('classGrid');
+        const classModal = document.getElementById('classModal');
+        const classForm = document.getElementById('classForm');
+        const classModalTitle = document.getElementById('classModalTitle');
+        const classDay = document.getElementById('classDay');
+        const classTime = document.getElementById('classTime');
+        const classSubject = document.getElementById('classSubject');
+        const classCode = document.getElementById('classCode');
+        const classLecturer = document.getElementById('classLecturer');
+        const classRoom = document.getElementById('classRoom');
+        const classColor = document.getElementById('classColor');
+        const classNotif = document.getElementById('classNotif');
+        const classClose = document.getElementById('classClose');
+        const classCancel = document.getElementById('classCancel');
+        const classDelete = document.getElementById('classDelete');
+        const classSubmit = document.getElementById('classSubmit');
+
+        // Jadual Perancangan (Dengan Tarikh)
+        const scheduleGrid = document.getElementById('scheduleGrid');
+        const scheduleModal = document.getElementById('scheduleModal');
+        const scheduleForm = document.getElementById('scheduleForm');
+        const scheduleModalTitle = document.getElementById('scheduleModalTitle');
+        const scheduleDay = document.getElementById('scheduleDay');
+        const scheduleDate = document.getElementById('scheduleDate');
+        const scheduleTime = document.getElementById('scheduleTime');
+        const scheduleSubject = document.getElementById('scheduleSubject');
+        const scheduleCode = document.getElementById('scheduleCode');
+        const scheduleLecturer = document.getElementById('scheduleLecturer');
+        const scheduleRoom = document.getElementById('scheduleRoom');
+        const scheduleColor = document.getElementById('scheduleColor');
+        const scheduleNotif = document.getElementById('scheduleNotif');
+        const scheduleClose = document.getElementById('scheduleClose');
+        const scheduleCancel = document.getElementById('scheduleCancel');
+        const scheduleDelete = document.getElementById('scheduleDelete');
+        const scheduleSubmit = document.getElementById('scheduleSubmit');
+
+        const currentWeekDisplay = document.getElementById('currentWeekDisplay');
+        const prevWeekBtn = document.getElementById('prevWeekBtn');
+        const nextWeekBtn = document.getElementById('nextWeekBtn');
+        const weekRange = document.getElementById('weekRange');
+        const addClassBtn = document.getElementById('addClassBtn');
+        const addScheduleBtn = document.getElementById('addScheduleBtn');
+
+        // ===== STATE =====
+        let currentUser = null;
+        let currentWeekOffset = 0;
+        let editingClassId = null;
+        let editingScheduleId = null;
+        let classData = {};
+        let scheduleData = {};
+
+        // ===== DAYS & TIMES =====
+        const weekDays = ['Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat'];
+        const allDays = ['Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu', 'Ahad'];
+
+        // Class times: 7:30 AM - 6:00 PM (30 min intervals)
+        const classTimes = [];
+        for (let h = 7; h < 18; h++) {
+            for (let m = 0; m < 60; m += 30) {
+                const hour = h < 10 ? `0${h}` : `${h}`;
+                const min = m === 0 ? '00' : '30';
+                classTimes.push(`${hour}:${min}`);
+            }
+        }
+
+        // Schedule times: 24 hours
+        const scheduleTimes = [];
+        for (let h = 0; h < 24; h++) {
+            for (let m = 0; m < 60; m += 30) {
+                const hour = h < 10 ? `0${h}` : `${h}`;
+                const min = m === 0 ? '00' : '30';
+                scheduleTimes.push(`${hour}:${min}`);
+            }
+        }
+
+        // ===== AUTH CHECK =====
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) {
+                window.location.href = 'index.html';
+                return;
+            }
+            if (user.email !== ALLOWED_EMAIL) {
+                alert('Akses ditolak.');
+                await signOut(auth);
+                window.location.href = 'index.html';
+                return;
+            }
+            currentUser = user;
+            await loadUserProfile(user.uid);
+            await loadClassData();
+            await loadScheduleData();
+            renderClassGrid();
+            renderScheduleGrid();
+            updateWeekDisplay();
+        });
+
+        // ===== LOAD USER PROFILE =====
+        async function loadUserProfile(uid) {
+            try {
+                const userRef = doc(db, "users", uid);
+                const userSnap = await getDoc(userRef);
+                if (userSnap.exists()) {
+                    userName.textContent = userSnap.data().displayName || 'Pengguna';
+                }
+            } catch (error) {
+                console.error('Error loading profile:', error);
+            }
+        }
+
+        // ===== LOGOUT =====
+        logoutBtn.addEventListener('click', async () => {
+            await signOut(auth);
+            window.location.href = 'index.html';
+        });
+
+        // ===== LOAD CLASS DATA (Berulang) =====
+        async function loadClassData() {
+            if (!currentUser) return;
+            try {
+                const q = query(
+                    collection(db, "classes"),
+                    where("userId", "==", currentUser.uid)
+                );
+                const querySnapshot = await getDocs(q);
+                classData = {};
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const key = `${data.day}-${data.time}`;
+                    classData[key] = { id: doc.id, ...data };
+                });
+            } catch (error) {
+                console.error('Error loading classes:', error);
+            }
+        }
+
+        // ===== LOAD SCHEDULE DATA (Dengan Tarikh) =====
+        async function loadScheduleData() {
+            if (!currentUser) return;
+            try {
+                const q = query(
+                    collection(db, "schedules"),
+                    where("userId", "==", currentUser.uid)
+                );
+                const querySnapshot = await getDocs(q);
+                scheduleData = {};
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const key = `${data.date}-${data.day}-${data.time}`;
+                    scheduleData[key] = { id: doc.id, ...data };
+                });
+            } catch (error) {
+                console.error('Error loading schedules:', error);
+            }
+        }
+
+        // ===== GET DATE FOR DAY =====
+        function getDateForDay(day, offset = 0) {
+            const now = new Date();
+            const currentDay = now.getDay(); // 0=Sunday, 1=Monday
+            const dayMap = { 'Ahad': 0, 'Isnin': 1, 'Selasa': 2, 'Rabu': 3, 'Khamis': 4, 'Jumaat': 5, 'Sabtu': 6 };
+            const targetDay = dayMap[day];
+            let diff = targetDay - currentDay + (offset * 7);
+            const date = new Date(now);
+            date.setDate(date.getDate() + diff);
+            return date;
+        }
+
+        function formatDate(date) {
+            return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+        }
+
+        function getWeekDates(offset = 0) {
+            const now = new Date();
+            const startOfWeek = new Date(now);
+            startOfWeek.setDate(now.getDate() - now.getDay() + 1 + (offset * 7));
+            const dates = {};
+            allDays.forEach((day, index) => {
+                const d = new Date(startOfWeek);
+                d.setDate(startOfWeek.getDate() + index);
+                dates[day] = d;
+            });
+            return dates;
+        }
+
+        // ===== FORMAT TIME DISPLAY =====
+        function formatTimeDisplay(time) {
+            const [h, m] = time.split(':');
+            const hour = parseInt(h);
+            if (hour === 0) return '12:00 AM';
+            if (hour < 12) return `${hour}:${m} AM`;
+            if (hour === 12) return `12:${m} PM`;
+            return `${hour - 12}:${m} PM`;
+        }
+
+        // ===== RENDER CLASS GRID (Berulang) =====
+        function renderClassGrid() {
+            const grid = document.getElementById('classGrid');
+            grid.innerHTML = '';
+
+            // Header
+            const headerRow = document.createElement('div');
+            headerRow.className = 'grid-header';
+            headerRow.innerHTML = `
+                <div class="time-label">Waktu</div>
+                ${weekDays.map(day => `
+                    <div class="day-header" data-day="${day}">
+                        <span class="day-name">${day}</span>
+                    </div>
+                `).join('')}
+            `;
+            grid.appendChild(headerRow);
+
+            // Time rows
+            classTimes.forEach(time => {
+                const row = document.createElement('div');
+                row.className = 'grid-row';
+
+                const timeLabel = document.createElement('div');
+                timeLabel.className = 'time-label';
+                timeLabel.textContent = formatTimeDisplay(time);
+                row.appendChild(timeLabel);
+
+                weekDays.forEach(day => {
+                    const cell = document.createElement('div');
+                    cell.className = 'grid-cell';
+                    cell.dataset.day = day;
+                    cell.dataset.time = time;
+
+                    const key = `${day}-${time}`;
+                    if (classData[key]) {
+                        const data = classData[key];
+                        cell.innerHTML = `
+                            <div class="schedule-item" style="background: ${data.color || '#667eea'};">
+                                <div class="subject-code">${data.subjectCode || ''}</div>
+                                <div class="subject-name">${data.subjectName}</div>
+                                <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
+                                <div class="room-number">🏫 ${data.room || ''}</div>
+                                <button class="delete-slot" data-id="${data.id}">✕</button>
+                            </div>
+                        `;
+                        cell.querySelector('.delete-slot').addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            deleteClass(data.id);
+                        });
+                        cell.addEventListener('click', () => editClass(data.id));
+                    } else {
+                        cell.addEventListener('click', () => openClassModal(day, time));
+                        cell.innerHTML = `<span class="add-hint">+</span>`;
+                    }
+
+                    row.appendChild(cell);
+                });
+
+                grid.appendChild(row);
+            });
+        }
+
+        // ===== RENDER SCHEDULE GRID (Dengan Tarikh) =====
+        function renderScheduleGrid() {
+            const grid = document.getElementById('scheduleGrid');
+            grid.innerHTML = '';
+
+            const weekDates = getWeekDates(currentWeekOffset);
+
+            // Header
+            const headerRow = document.createElement('div');
+            headerRow.className = 'grid-header';
+            headerRow.innerHTML = `
+                <div class="time-label">Waktu</div>
+                ${allDays.map(day => `
+                    <div class="day-header" data-day="${day}">
+                        <span class="day-name">${day}</span>
+                        <span class="day-date">${formatDate(weekDates[day])}</span>
+                    </div>
+                `).join('')}
+            `;
+            grid.appendChild(headerRow);
+
+            // Time rows
+            scheduleTimes.forEach(time => {
+                const row = document.createElement('div');
+                row.className = 'grid-row';
+
+                const timeLabel = document.createElement('div');
+                timeLabel.className = 'time-label';
+                timeLabel.textContent = formatTimeDisplay(time);
+                row.appendChild(timeLabel);
+
+                allDays.forEach(day => {
+                    const cell = document.createElement('div');
+                    cell.className = 'grid-cell';
+                    const dateStr = formatDate(weekDates[day]);
+                    cell.dataset.day = day;
+                    cell.dataset.time = time;
+                    cell.dataset.date = dateStr;
+
+                    const key = `${dateStr}-${day}-${time}`;
+                    if (scheduleData[key]) {
+                        const data = scheduleData[key];
+                        cell.innerHTML = `
+                            <div class="schedule-item" style="background: ${data.color || '#667eea'};">
+                                <div class="subject-code">${data.subjectCode || ''}</div>
+                                <div class="subject-name">${data.subjectName}</div>
+                                <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
+                                <div class="room-number">🏫 ${data.room || ''}</div>
+                                <button class="delete-slot" data-id="${data.id}">✕</button>
+                            </div>
+                        `;
+                        cell.querySelector('.delete-slot').addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            deleteSchedule(data.id);
+                        });
+                        cell.addEventListener('click', () => editSchedule(data.id));
+                    } else {
+                        cell.addEventListener('click', () => openScheduleModal(day, time, weekDates[day]));
+                        cell.innerHTML = `<span class="add-hint">+</span>`;
+                    }
+
+                    row.appendChild(cell);
+                });
+
+                grid.appendChild(row);
+            });
+        }
+
+        // ===== CLASS CRUD =====
+        function openClassModal(day, time, editData = null) {
+            classDay.value = day;
+            classTime.value = time;
+            if (editData) {
+                classModalTitle.textContent = '✏️ Edit Jadual Kelas';
+                classSubject.value = editData.subjectName || '';
+                classCode.value = editData.subjectCode || '';
+                classLecturer.value = editData.lecturer || '';
+                classRoom.value = editData.room || '';
+                classColor.value = editData.color || '#667eea';
+                classNotif.checked = editData.notification || false;
+                editingClassId = editData.id;
+                classDelete.style.display = 'inline-block';
+            } else {
+                classModalTitle.textContent = '➕ Tambah Jadual Kelas';
+                classForm.reset();
+                classColor.value = '#667eea';
+                classNotif.checked = false;
+                editingClassId = null;
+                classDelete.style.display = 'none';
+            }
+            classModal.classList.add('show');
+            classSubject.focus();
+        }
+
+        function editClass(id) {
+            const key = Object.keys(classData).find(k => classData[k].id === id);
+            if (key) {
+                openClassModal(classData[key].day, classData[key].time, classData[key]);
+            }
+        }
+
+        async function deleteClass(id) {
+            if (!confirm('Padam jadual kelas ini?')) return;
+            try {
+                await deleteDoc(doc(db, "classes", id));
+                showNotification('🗑️ Jadual kelas dipadam', 'info');
+                await loadClassData();
+                renderClassGrid();
+            } catch (error) {
+                console.error('Error deleting class:', error);
+                showNotification('❌ Gagal memadam', 'error');
+            }
+        }
+
+        classForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentUser) return;
+
+            const data = {
+                userId: currentUser.uid,
+                day: classDay.value,
+                time: classTime.value,
+                subjectName: classSubject.value.trim(),
+                subjectCode: classCode.value.trim(),
+                lecturer: classLecturer.value.trim(),
+                room: classRoom.value.trim(),
+                color: classColor.value,
+                notification: classNotif.checked,
+                updatedAt: new Date().toISOString(),
+                type: 'class' // Untuk bezakan dengan schedule
+            };
+
+            try {
+                if (editingClassId) {
+                    await updateDoc(doc(db, "classes", editingClassId), data);
+                    showNotification('✅ Jadual kelas dikemaskini!', 'success');
+                } else {
+                    await addDoc(collection(db, "classes"), {
+                        ...data,
+                        createdAt: new Date().toISOString()
+                    });
+                    showNotification('✅ Jadual kelas ditambah!', 'success');
+                }
+
+                classModal.classList.remove('show');
+                await loadClassData();
+                renderClassGrid();
+
+                // Auto-add to schedule for current week
+                await autoAddToSchedule(data);
+
+                if (data.notification) {
+                    sendPushNotification(data);
+                }
+
+            } catch (error) {
+                console.error('Error saving class:', error);
+                showNotification('❌ Gagal menyimpan', 'error');
+            }
+        });
+
+        // ===== AUTO ADD TO SCHEDULE =====
+        async function autoAddToSchedule(classData) {
+            if (!currentUser) return;
+            const weekDates = getWeekDates(currentWeekOffset);
+            const date = weekDates[classData.day];
+            const dateStr = formatDate(date);
+
+            const key = `${dateStr}-${classData.day}-${classData.time}`;
+
+            // Check if already exists
+            if (scheduleData[key]) return;
+
+            try {
+                await addDoc(collection(db, "schedules"), {
+                    userId: currentUser.uid,
+                    day: classData.day,
+                    date: dateStr,
+                    time: classData.time,
+                    subjectName: classData.subjectName,
+                    subjectCode: classData.subjectCode,
+                    lecturer: classData.lecturer,
+                    room: classData.room,
+                    color: classData.color,
+                    notification: classData.notification,
+                    type: 'class',
+                    createdAt: new Date().toISOString()
+                });
+                await loadScheduleData();
+                renderScheduleGrid();
+            } catch (error) {
+                console.error('Error auto-adding to schedule:', error);
+            }
+        }
+
+        // ===== SCHEDULE CRUD =====
+        function openScheduleModal(day, time, date, editData = null) {
+            scheduleDay.value = day;
+            scheduleDate.value = formatDate(date);
+            scheduleTime.value = time;
+            if (editData) {
+                scheduleModalTitle.textContent = '✏️ Edit Jadual Perancangan';
+                scheduleSubject.value = editData.subjectName || '';
+                scheduleCode.value = editData.subjectCode || '';
+                scheduleLecturer.value = editData.lecturer || '';
+                scheduleRoom.value = editData.room || '';
+                scheduleColor.value = editData.color || '#667eea';
+                scheduleNotif.checked = editData.notification || false;
+                editingScheduleId = editData.id;
+                scheduleDelete.style.display = 'inline-block';
+            } else {
+                scheduleModalTitle.textContent = '➕ Tambah Jadual Perancangan';
+                scheduleForm.reset();
+                scheduleColor.value = '#667eea';
+                scheduleNotif.checked = false;
+                editingScheduleId = null;
+                scheduleDelete.style.display = 'none';
+            }
+            scheduleModal.classList.add('show');
+            scheduleSubject.focus();
+        }
+
+        function editSchedule(id) {
+            const key = Object.keys(scheduleData).find(k => scheduleData[k].id === id);
+            if (key) {
+                const data = scheduleData[key];
+                const dateParts = data.date.split('/');
+                const date = new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
+                openScheduleModal(data.day, data.time, date, data);
+            }
+        }
+
+        async function deleteSchedule(id) {
+            if (!confirm('Padam jadual perancangan ini?')) return;
+            try {
+                await deleteDoc(doc(db, "schedules", id));
+                showNotification('🗑️ Jadual perancangan dipadam', 'info');
+                await loadScheduleData();
+                renderScheduleGrid();
+            } catch (error) {
+                console.error('Error deleting schedule:', error);
+                showNotification('❌ Gagal memadam', 'error');
+            }
+        }
+
+        scheduleForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentUser) return;
+
+            const data = {
+                userId: currentUser.uid,
+                day: scheduleDay.value,
+                date: scheduleDate.value,
+                time: scheduleTime.value,
+                subjectName: scheduleSubject.value.trim(),
+                subjectCode: scheduleCode.value.trim(),
+                lecturer: scheduleLecturer.value.trim(),
+                room: scheduleRoom.value.trim(),
+                color: scheduleColor.value,
+                notification: scheduleNotif.checked,
+                type: 'schedule',
+                updatedAt: new Date().toISOString()
+            };
+
+            try {
+                if (editingScheduleId) {
+                    await updateDoc(doc(db, "schedules", editingScheduleId), data);
+                    showNotification('✅ Jadual perancangan dikemaskini!', 'success');
+                } else {
+                    await addDoc(collection(db, "schedules"), {
+                        ...data,
+                        createdAt: new Date().toISOString()
+                    });
+                    showNotification('✅ Jadual perancangan ditambah!', 'success');
+                }
+
+                scheduleModal.classList.remove('show');
+                await loadScheduleData();
+                renderScheduleGrid();
+
+                if (data.notification) {
+                    sendPushNotification(data);
+                }
+
+            } catch (error) {
+                console.error('Error saving schedule:', error);
+                showNotification('❌ Gagal menyimpan', 'error');
+            }
+        });
+
+        // ===== PUSH NOTIFICATION =====
+        function sendPushNotification(data) {
+            if (!("Notification" in window)) {
+                showNotification('⚠️ Browser tidak support notification', 'error');
+                return;
+            }
+
+            if (Notification.permission === "granted") {
+                new Notification('📚 MYPOLY - Peringatan Kelas', {
+                    body: `🕐 ${formatTimeDisplay(data.time)}\n📖 ${data.subjectName} (${data.subjectCode})\n👨‍🏫 ${data.lecturer}\n🏫 ${data.room}`,
+                    icon: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQJPPtvSjk6_fnQby9h0pJi3dMLhp-x1BHV2g&s'
+                });
+            } else if (Notification.permission !== "denied") {
+                Notification.requestPermission().then(permission => {
+                    if (permission === "granted") {
+                        sendPushNotification(data);
+                    }
+                });
+            }
+        }
+
+        // ===== SHOW NOTIFICATION =====
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            setTimeout(() => notification.classList.add('show'), 100);
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // ===== WEEK NAVIGATION =====
+        function updateWeekDisplay() {
+            const weekDates = getWeekDates(currentWeekOffset);
+            const start = weekDates['Isnin'];
+            const end = weekDates['Ahad'];
+            const options = { day: 'numeric', month: 'short', year: 'numeric' };
+            weekRange.textContent = `${start.toLocaleDateString('ms-MY', options)} - ${end.toLocaleDateString('ms-MY', options)}`;
+        }
+
+        prevWeekBtn.addEventListener('click', () => {
+            currentWeekOffset--;
+            renderScheduleGrid();
+            updateWeekDisplay();
+        });
+
+        nextWeekBtn.addEventListener('click', () => {
+            currentWeekOffset++;
+            renderScheduleGrid();
+            updateWeekDisplay();
+        });
+
+        // ===== CLOSE MODALS =====
+        function closeClassModal() { classModal.classList.remove('show'); }
+        classClose.addEventListener('click', closeClassModal);
+        classCancel.addEventListener('click', closeClassModal);
+        classModal.addEventListener('click', (e) => { if (e.target === classModal) closeClassModal(); });
+
+        function closeScheduleModal() { scheduleModal.classList.remove('show'); }
+        scheduleClose.addEventListener('click', closeScheduleModal);
+        scheduleCancel.addEventListener('click', closeScheduleModal);
+        scheduleModal.addEventListener('click', (e) => { if (e.target === scheduleModal) closeScheduleModal(); });
+
+        // ===== ADD BUTTONS =====
+        addClassBtn.addEventListener('click', () => openClassModal('Isnin', '08:00'));
+        addScheduleBtn.addEventListener('click', () => {
+            const weekDates = getWeekDates(currentWeekOffset);
+            openScheduleModal('Isnin', '08:00', weekDates['Isnin']);
+        });
+
+        // ===== KEYBOARD SHORTCUTS =====
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeClassModal();
+                closeScheduleModal();
+            }
+        });
+
+        // ===== CHECK NOTIFICATIONS EVERY MINUTE =====
+        setInterval(() => {
+            const now = new Date();
+            const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const dayMap = ['Ahad', 'Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu'];
+            const currentDay = dayMap[now.getDay()];
+            const dateStr = formatDate(now);
+
+            Object.values(scheduleData).forEach(data => {
+                if (data.day === currentDay &&
+                    data.date === dateStr &&
+                    data.time === currentTime &&
+                    data.notification) {
+                    sendPushNotification(data);
+                }
+            });
+        }, 60000);
+
+        // ===== INIT =====
+        if ("Notification" in window && Notification.permission === "default") {
+            Notification.requestPermission();
+        }
+
+        window.db = db;
+        window.auth = auth;
+
+    </script>
+
+    <style>
+        /* ===== RESET & BASE ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a1a;
+            color: #ffffff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ===== NOTIFICATION ===== */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: -400px;
+            padding: 16px 24px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 9999;
+            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        .notification.show {
+            right: 20px;
+        }
+        .notification.success {
+            border-color: #2ed573;
+            background: rgba(46, 213, 115, 0.15);
+        }
+        .notification.error {
+            border-color: #ff4757;
+            background: rgba(255, 71, 87, 0.15);
+        }
+        .notification.info {
+            border-color: #1e90ff;
+            background: rgba(30, 144, 255, 0.15);
+        }
+
+        /* ===== NAVBAR ===== */
+        .navbar {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 12px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .navbar-brand span {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .navbar-brand .brand-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        .navbar-brand .brand-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            padding: 4px;
+        }
+        .navbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .navbar-right .user-name {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 13px;
+        }
+        .btn-back {
+            padding: 8px 20px;
+            background: rgba(102, 126, 234, 0.15);
+            border: 1px solid rgba(102, 126, 234, 0.2);
+            border-radius: 8px;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-decoration: none;
+        }
+        .btn-back:hover {
+            background: rgba(102, 126, 234, 0.25);
+            transform: scale(1.02);
+        }
+        .btn-logout {
+            padding: 8px 20px;
+            background: rgba(255, 82, 82, 0.12);
+            border: 1px solid rgba(255, 82, 82, 0.2);
+            border-radius: 8px;
+            color: #ff6b6b;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-logout:hover {
+            background: rgba(255, 82, 82, 0.25);
+            border-color: #ff6b6b;
+            transform: scale(1.02);
+        }
+
+        /* ===== MAIN ===== */
+        .main-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 24px 32px;
+        }
+
+        /* ===== SECTION HEADERS ===== */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+            margin-top: 24px;
+        }
+        .section-header:first-of-type {
+            margin-top: 0;
+        }
+        .section-header h2 {
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .section-header .subtitle {
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 13px;
+        }
+
+        .btn-add {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-add:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .week-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 6px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .week-nav button {
+            background: rgba(255, 255, 255, 0.05);
+            border: none;
+            border-radius: 6px;
+            color: #ffffff;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        .week-nav button:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .week-nav .week-range {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            min-width: 200px;
+            text-align: center;
+        }
+
+        /* ===== GRID WRAPPER ===== */
+        .schedule-wrapper {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            overflow: auto;
+            padding: 16px;
+        }
+
+        /* ===== GRID ===== */
+        .grid-header,
+        .grid-row {
+            display: grid;
+            gap: 2px;
+            margin-bottom: 2px;
+        }
+
+        /* Class grid: 8 columns (time + 5 days) */
+        #classGrid .grid-header,
+        #classGrid .grid-row {
+            grid-template-columns: 80px repeat(5, 1fr);
+        }
+
+        /* Schedule grid: 8 columns (time + 7 days) */
+        #scheduleGrid .grid-header,
+        #scheduleGrid .grid-row {
+            grid-template-columns: 80px repeat(7, 1fr);
+        }
+
+        .grid-header {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px 10px 0 0;
+            padding: 8px 4px;
+        }
+
+        .grid-header .time-label {
+            grid-column: 1;
+        }
+
+        .day-header {
+            text-align: center;
+            padding: 8px 4px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+        .day-header .day-name {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        .day-header .day-date {
+            display: block;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .grid-row .time-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.3);
+            padding: 4px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 6px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .grid-cell {
+            min-height: 50px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            transition: all 0.3s ease;
+            position: relative;
+            cursor: pointer;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .grid-cell:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(102, 126, 234, 0.2);
+        }
+        .grid-cell .add-hint {
+            color: rgba(255, 255, 255, 0.06);
+            font-size: 18px;
+            font-weight: 300;
+            transition: all 0.3s ease;
+        }
+        .grid-cell:hover .add-hint {
+            color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* ===== SCHEDULE ITEM ===== */
+        .schedule-item {
+            width: 100%;
+            height: 100%;
+            border-radius: 6px;
+            padding: 6px 8px;
+            position: relative;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 1px;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        .schedule-item:hover {
+            transform: scale(1.02);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+        }
+        .schedule-item .subject-code {
+            font-size: 10px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.7);
+            letter-spacing: 0.5px;
+        }
+        .schedule-item .subject-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: #ffffff;
+            line-height: 1.2;
+        }
+        .schedule-item .lecturer-name {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+        .schedule-item .room-number {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+        .schedule-item .delete-slot {
+            position: absolute;
+            top: 2px;
+            right: 4px;
+            background: rgba(0, 0, 0, 0.3);
+            border: none;
+            color: rgba(255, 255, 255, 0.5);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            padding: 1px 6px;
+            transition: all 0.3s ease;
+            opacity: 0;
+        }
+        .schedule-item:hover .delete-slot {
+            opacity: 1;
+        }
+        .schedule-item .delete-slot:hover {
+            background: rgba(255, 71, 87, 0.6);
+            color: #ffffff;
+        }
+
+        /* ===== BADGE UNTUK JADUAL KELAS ===== */
+        .class-badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            background: #2ed573;
+            color: #fff;
+            font-size: 8px;
+            padding: 1px 6px;
+            border-radius: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        /* ===== MODAL ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(12px);
+            z-index: 9998;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .modal-overlay.show {
+            display: flex;
+        }
+        .modal-box {
+            background: #1a1a2e;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 36px 40px;
+            max-width: 520px;
+            width: 100%;
+            animation: slideUp 0.4s ease;
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5);
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        .modal-box .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .modal-box .modal-header h2 {
+            font-size: 22px;
+            font-weight: 700;
+        }
+        .modal-box .modal-header .close-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: none;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 4px 12px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        .modal-box .modal-header .close-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+        .modal-box .form-group {
+            margin-bottom: 14px;
+        }
+        .modal-box .form-group label {
+            display: block;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            letter-spacing: 0.5px;
+        }
+        .modal-box .form-group input,
+        .modal-box .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            color: #ffffff;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+        .modal-box .form-group input:focus,
+        .modal-box .form-group select:focus {
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.08);
+        }
+        .modal-box .form-group input[type="color"] {
+            padding: 4px;
+            height: 44px;
+            cursor: pointer;
+        }
+        .modal-box .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .modal-box .form-check {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 0;
+        }
+        .modal-box .form-check input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: #667eea;
+            cursor: pointer;
+        }
+        .modal-box .form-check label {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .modal-box .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .modal-box .modal-actions button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .modal-box .modal-actions .btn-save {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #ffffff;
+        }
+        .modal-box .modal-actions .btn-save:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+        }
+        .modal-box .modal-actions .btn-cancel {
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.5);
+        }
+        .modal-box .modal-actions .btn-cancel:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .modal-box .modal-actions .btn-delete {
+            background: rgba(255, 71, 87, 0.15);
+            color: #ff4757;
+            border: 1px solid rgba(255, 71, 87, 0.2);
+            display: none;
+        }
+        .modal-box .modal-actions .btn-delete:hover {
+            background: rgba(255, 71, 87, 0.25);
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 1200px) {
+            .main-container {
+                padding: 16px;
+            }
+            #classGrid .grid-header,
+            #classGrid .grid-row {
+                grid-template-columns: 60px repeat(5, 1fr);
+            }
+            #scheduleGrid .grid-header,
+            #scheduleGrid .grid-row {
+                grid-template-columns: 60px repeat(7, 1fr);
+            }
+            .schedule-wrapper {
+                overflow-x: auto;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 10px 16px;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .section-header h2 {
+                font-size: 18px;
+            }
+            .week-nav .week-range {
+                min-width: 140px;
+                font-size: 12px;
+            }
+            .modal-box {
+                padding: 24px;
+                margin: 10px;
+            }
+            .modal-box .form-row {
+                grid-template-columns: 1fr;
+            }
+            #classGrid .grid-header,
+            #classGrid .grid-row {
+                grid-template-columns: 50px repeat(5, 1fr);
+                min-width: 500px;
+            }
+            #scheduleGrid .grid-header,
+            #scheduleGrid .grid-row {
+                grid-template-columns: 50px repeat(7, 1fr);
+                min-width: 600px;
+            }
+            .grid-cell {
+                min-height: 40px;
+                padding: 2px;
+            }
+            .schedule-item .subject-name {
+                font-size: 10px;
+            }
+            .schedule-item .subject-code,
+            .schedule-item .lecturer-name,
+            .schedule-item .room-number {
+                font-size: 8px;
+            }
+            .day-header .day-name {
+                font-size: 11px;
+            }
+            .day-header .day-date {
+                font-size: 9px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #classGrid .grid-header,
+            #classGrid .grid-row {
+                min-width: 400px;
+            }
+            #scheduleGrid .grid-header,
+            #scheduleGrid .grid-row {
+                min-width: 500px;
+            }
+            .grid-cell {
+                min-height: 35px;
+            }
+            .schedule-item {
+                padding: 3px 4px;
+            }
+            .schedule-item .subject-name {
+                font-size: 9px;
+            }
+            .schedule-item .subject-code,
+            .schedule-item .lecturer-name,
+            .schedule-item .room-number {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===== NAVBAR ===== -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <div class="brand-icon">
+                <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQJPPtvSjk6_fnQby9h0pJi3dMLhp-x1BHV2g&s" alt="Logo" />
+            </div>
+            MYPOLY <span>Jadual</span>
+        </div>
+        <div class="navbar-right">
+            <span class="user-name" id="userName">Pengguna</span>
+            <a href="dashboard.html" class="btn-back">🏠 Dashboard</a>
+            <button class="btn-logout" id="logoutBtn">🚪 Logout</button>
+        </div>
+    </nav>
+
+    <!-- ===== MAIN ===== -->
+    <div class="main-container">
+
+        <!-- ===== BAHAGIAN ATAS: JADUAL KELAS (BERULANG) ===== -->
+        <div class="section-header">
+            <div>
+                <h2>📚 Jadual Kelas</h2>
+                <span class="subtitle">Isnin - Jumaat • 7:30 Pagi - 6:00 Petang • Berulang</span>
+            </div>
+            <button class="btn-add" id="addClassBtn">➕ Tambah Kelas</button>
+        </div>
+
+        <div class="schedule-wrapper">
+            <div id="classGrid"></div>
+        </div>
+
+        <!-- ===== BAHAGIAN BAWAH: JADUAL PERANCANGAN (DENGAN TARIKH) ===== -->
+        <div class="section-header" style="margin-top: 32px;">
+            <div>
+                <h2>📅 Jadual Perancangan</h2>
+                <span class="subtitle">24 Jam • Isnin - Ahad • Dengan Tarikh</span>
+            </div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <div class="week-nav">
+                    <button id="prevWeekBtn">‹</button>
+                    <span class="week-range" id="weekRange">---</span>
+                    <button id="nextWeekBtn">›</button>
+                </div>
+                <button class="btn-add" id="addScheduleBtn">➕ Tambah Perancangan</button>
+            </div>
+        </div>
+
+        <div class="schedule-wrapper">
+            <div id="scheduleGrid"></div>
+        </div>
+
+        <!-- ===== CLASS MODAL ===== -->
+        <div class="modal-overlay" id="classModal">
+            <div class="modal-box">
+                <div class="modal-header">
+                    <h2 id="classModalTitle">➕ Tambah Jadual Kelas</h2>
+                    <button class="close-btn" id="classClose">✕</button>
+                </div>
+                <form id="classForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>📅 Hari</label>
+                            <select id="classDay" required>
+                                <option value="Isnin">Isnin</option>
+                                <option value="Selasa">Selasa</option>
+                                <option value="Rabu">Rabu</option>
+                                <option value="Khamis">Khamis</option>
+                                <option value="Jumaat">Jumaat</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>🕐 Masa</label>
+                            <select id="classTime" required></select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>📖 Nama Subjek</label>
+                        <input type="text" id="classSubject" placeholder="Contoh: Reka Bentuk Web" required />
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>📋 Kod Subjek</label>
+                            <input type="text" id="classCode" placeholder="Contoh: DDT 1013" />
+                        </div>
+                        <div class="form-group">
+                            <label>🏫 Bilik</label>
+                            <input type="text" id="classRoom" placeholder="Contoh: A-105" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>👨‍🏫 Pensyarah</label>
+                        <input type="text" id="classLecturer" placeholder="Nama pensyarah" />
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>🎨 Warna</label>
+                            <input type="color" id="classColor" value="#667eea" />
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <div class="form-check">
+                                <input type="checkbox" id="classNotif" />
+                                <label for="classNotif">🔔 Hantar notifikasi</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-delete" id="classDelete">🗑️ Padam</button>
+                        <button type="button" class="btn-cancel" id="classCancel">Batal</button>
+                        <button type="submit" class="btn-save" id="classSubmit">💾 Simpan</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ===== SCHEDULE MODAL ===== -->
+        <div class="modal-overlay" id="scheduleModal">
+            <div class="modal-box">
+                <div class="modal-header">
+                    <h2 id="scheduleModalTitle">➕ Tambah Jadual Perancangan</h2>
+                    <button class="close-btn" id="scheduleClose">✕</button>
+                </div>
+                <form id="scheduleForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>📅 Hari</label>
+                            <select id="scheduleDay" required>
+                                <option value="Isnin">Isnin</option>
+                                <option value="Selasa">Selasa</option>
+                                <option value="Rabu">Rabu</option>
+                                <option value="Khamis">Khamis</option>
+                                <option value="Jumaat">Jumaat</option>
+                                <option value="Sabtu">Sabtu</option>
+                                <option value="Ahad">Ahad</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>📆 Tarikh</label>
+                            <input type="text" id="scheduleDate" disabled style="opacity:0.6;" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>🕐 Masa</label>
+                        <select id="scheduleTime" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label>📖 Nama Subjek</label>
+                        <input type="text" id="scheduleSubject" placeholder="Contoh: Mesyuarat Projek" required />
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>📋 Kod</label>
+                            <input type="text" id="scheduleCode" placeholder="Contoh: PRJ 2026" />
+                        </div>
+                        <div class="form-group">
+                            <label>🏫 Bilik</label>
+                            <input type="text" id="scheduleRoom" placeholder="Contoh: A-105" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>👨‍🏫 Pensyarah / Pegawai</label>
+                        <input type="text" id="scheduleLecturer" placeholder="Nama" />
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>🎨 Warna</label>
+                            <input type="color" id="scheduleColor" value="#667eea" />
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <div class="form-check">
+                                <input type="checkbox" id="scheduleNotif" />
+                                <label for="scheduleNotif">🔔 Hantar notifikasi</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-delete" id="scheduleDelete">🗑️ Padam</button>
+                        <button type="button" class="btn-cancel" id="scheduleCancel">Batal</button>
+                        <button type="submit" class="btn-save" id="scheduleSubmit">💾 Simpan</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // ===== POPULATE TIME DROPDOWNS =====
+        function populateTimeSelects() {
+            // Class times: 7:30 AM - 6:00 PM
+            const classTimes = [];
+            for (let h = 7; h < 18; h++) {
+                for (let m = 0; m < 60; m += 30) {
+                    const hour = h < 10 ? `0${h}` : `${h}`;
+                    const min = m === 0 ? '00' : '30';
+                    classTimes.push(`${hour}:${min}`);
+                }
+            }
+
+            const classTimeSelect = document.getElementById('classTime');
+            classTimes.forEach(time => {
+                const option = document.createElement('option');
+                option.value = time;
+                option.textContent = formatTimeDisplay(time);
+                classTimeSelect.appendChild(option);
+            });
+
+            // Schedule times: 24 hours
+            const scheduleTimes = [];
+            for (let h = 0; h < 24; h++) {
+                for (let m = 0; m < 60; m += 30) {
+                    const hour = h < 10 ? `0${h}` : `${h}`;
+                    const min = m === 0 ? '00' : '30';
+                    scheduleTimes.push(`${hour}:${min}`);
+                }
+            }
+
+            const scheduleTimeSelect = document.getElementById('scheduleTime');
+            scheduleTimes.forEach(time => {
+                const option = document.createElement('option');
+                option.value = time;
+                option.textContent = formatTimeDisplay(time);
+                scheduleTimeSelect.appendChild(option);
+            });
+        }
+
+        function formatTimeDisplay(time) {
+            const [h, m] = time.split(':');
+            const hour = parseInt(h);
+            if (hour === 0) return '12:00 AM';
+            if (hour < 12) return `${hour}:${m} AM`;
+            if (hour === 12) return `12:${m} PM`;
+            return `${hour - 12}:${m} PM`;
+        }
+
+        populateTimeSelects();
+
+        // Make functions available globally for modal
+        window.openClassModal = function(day, time, editData) {
+            const modal = document.getElementById('classModal');
+            document.getElementById('classDay').value = day;
+            document.getElementById('classTime').value = time;
+            if (editData) {
+                document.getElementById('classModalTitle').textContent = '✏️ Edit Jadual Kelas';
+                document.getElementById('classSubject').value = editData.subjectName || '';
+                document.getElementById('classCode').value = editData.subjectCode || '';
+                document.getElementById('classLecturer').value = editData.lecturer || '';
+                document.getElementById('classRoom').value = editData.room || '';
+                document.getElementById('classColor').value = editData.color || '#667eea';
+                document.getElementById('classNotif').checked = editData.notification || false;
+                document.getElementById('classDelete').style.display = 'inline-block';
+                window.editingClassId = editData.id;
+            } else {
+                document.getElementById('classModalTitle').textContent = '➕ Tambah Jadual Kelas';
+                document.getElementById('classForm').reset();
+                document.getElementById('classColor').value = '#667eea';
+                document.getElementById('classNotif').checked = false;
+                document.getElementById('classDelete').style.display = 'none';
+                window.editingClassId = null;
+            }
+            modal.classList.add('show');
+            document.getElementById('classSubject').focus();
+        };
+
+        window.openScheduleModal = function(day, time, date, editData) {
+            const modal = document.getElementById('scheduleModal');
+            document.getElementById('scheduleDay').value = day;
+            document.getElementById('scheduleTime').value = time;
+            document.getElementById('scheduleDate').value = formatDateDisplay(date);
+
+            if (editData) {
+                document.getElementById('scheduleModalTitle').textContent = '✏️ Edit Jadual Perancangan';
+                document.getElementById('scheduleSubject').value = editData.subjectName || '';
+                document.getElementById('scheduleCode').value = editData.subjectCode || '';
+                document.getElementById('scheduleLecturer').value = editData.lecturer || '';
+                document.getElementById('scheduleRoom').value = editData.room || '';
+                document.getElementById('scheduleColor').value = editData.color || '#667eea';
+                document.getElementById('scheduleNotif').checked = editData.notification || false;
+                document.getElementById('scheduleDelete').style.display = 'inline-block';
+                window.editingScheduleId = editData.id;
+            } else {
+                document.getElementById('scheduleModalTitle').textContent = '➕ Tambah Jadual Perancangan';
+                document.getElementById('scheduleForm').reset();
+                document.getElementById('scheduleColor').value = '#667eea';
+                document.getElementById('scheduleNotif').checked = false;
+                document.getElementById('scheduleDelete').style.display = 'none';
+                window.editingScheduleId = null;
+            }
+            modal.classList.add('show');
+            document.getElementById('scheduleSubject').focus();
+        };
+
+        function formatDateDisplay(date) {
+            if (!date) return '';
+            if (typeof date === 'string') return date;
+            return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+        }
+    </script>
+
+</body>
+</html>
