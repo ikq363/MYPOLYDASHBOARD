@@ -12,7 +12,7 @@
         import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, doc, collection, addDoc, getDocs, query, where, deleteDoc, updateDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // Firebase Config
+        // ===== FIREBASE CONFIG =====
         const firebaseConfig = {
             apiKey: "AIzaSyAcTdgGAEPnUEP87N_BuLBxBmSzo1NOVHY",
             authDomain: "mypoly-dashboard.firebaseapp.com",
@@ -23,7 +23,7 @@
             measurementId: "G-HTZXCGB1ZB"
         };
 
-        // Initialize
+        // ===== INIT FIREBASE =====
         const app = initializeApp(firebaseConfig);
         const analytics = getAnalytics(app);
         const auth = getAuth(app);
@@ -54,6 +54,7 @@
         const deleteBtn = document.getElementById('deleteBtn');
         const submitBtn = document.getElementById('submitBtn');
         const searchInput = document.getElementById('searchInput');
+        const uploadProgress = document.getElementById('uploadProgress');
 
         // ===== STATE =====
         let currentUser = null;
@@ -108,6 +109,108 @@
             }
         }
 
+        // ===== UPLOAD FILE TO GOOGLE DRIVE =====
+        async function uploadToDrive(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    try {
+                        const base64Data = e.target.result.split(',')[1];
+                        
+                        // Buat metadata untuk fail
+                        const metadata = {
+                            name: file.name,
+                            parents: [DRIVE_FOLDER_ID],
+                            mimeType: file.type || 'application/octet-stream'
+                        };
+
+                        // Upload ke Google Drive menggunakan API
+                        const formData = new FormData();
+                        formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+                        formData.append('file', file);
+
+                        // Gunakan Google Drive API dengan access token
+                        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${await getAccessToken()}`
+                            },
+                            body: formData
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Upload failed: ' + response.statusText);
+                        }
+
+                        const result = await response.json();
+                        resolve({
+                            fileId: result.id,
+                            fileUrl: `https://drive.google.com/file/d/${result.id}/view`,
+                            fileName: file.name
+                        });
+
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // ===== GET ACCESS TOKEN (guna Service Account) =====
+        async function getAccessToken() {
+            try {
+                // Gunakan Firebase Authentication untuk dapatkan token
+                const token = await auth.currentUser.getIdToken();
+                return token;
+            } catch (error) {
+                console.error('Error getting token:', error);
+                throw error;
+            }
+        }
+
+        // ===== UPLOAD FILE VIA CLOUD FUNCTION (ALTERNATIVE) =====
+        // Jika upload terus tak berfungsi, kita boleh guna Cloud Function
+        async function uploadViaCloudFunction(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    try {
+                        const base64Data = e.target.result.split(',')[1];
+                        
+                        // Panggil Cloud Function untuk upload
+                        const response = await fetch('https://us-central1-mypoly-dashboard.cloudfunctions.net/uploadToDrive', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${await auth.currentUser.getIdToken()}`
+                            },
+                            body: JSON.stringify({
+                                fileName: file.name,
+                                fileData: base64Data,
+                                folderId: DRIVE_FOLDER_ID
+                            })
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Upload failed');
+                        }
+
+                        const result = await response.json();
+                        resolve({
+                            fileId: result.fileId,
+                            fileUrl: result.fileUrl,
+                            fileName: file.name
+                        });
+
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
         // ===== RENDER TASKS =====
         function renderTasks() {
             const container = taskContainer;
@@ -122,7 +225,6 @@
                 filteredTasks = tasks.filter(t => t.status === 'Tertunda');
             }
 
-            // Search filter
             const searchTerm = searchInput.value.toLowerCase().trim();
             if (searchTerm) {
                 filteredTasks = filteredTasks.filter(t =>
@@ -142,7 +244,6 @@
                 return;
             }
 
-            // Sort: Ongoing first, then by due date
             const priorityOrder = { 'Tinggi': 0, 'Sederhana': 1, 'Rendah': 2 };
             const statusOrder = { 'Ongoing': 0, 'Tertunda': 1, 'Selesai': 2 };
 
@@ -202,7 +303,6 @@
                 container.appendChild(card);
             });
 
-            // Event listeners for buttons
             container.querySelectorAll('.btn-complete').forEach(btn => {
                 btn.onclick = () => toggleComplete(btn.dataset.id);
             });
@@ -266,6 +366,7 @@
             taskFilePreview.innerHTML = '';
             deleteBtn.style.display = 'none';
             submitBtn.textContent = '💾 Tambah Tugasan';
+            uploadProgress.style.display = 'none';
             taskModal.classList.add('show');
             setTimeout(() => taskTitle.focus(), 100);
         }
@@ -284,6 +385,7 @@
             taskStatus.value = task.status;
             deleteBtn.style.display = 'inline-block';
             submitBtn.textContent = '💾 Kemaskini';
+            uploadProgress.style.display = 'none';
             taskFilePreview.innerHTML = '';
             if (task.fileUrl) {
                 taskFilePreview.innerHTML = `
@@ -311,18 +413,27 @@
             const file = taskFile.files[0];
             let fileUrl = null;
             let fileName = null;
+            let fileId = null;
 
-            // Upload file to Google Drive (simulasi - sebenar perlukan Drive API)
+            // Upload file to Google Drive
             if (file) {
                 try {
-                    // Simulasi upload - dalam realiti, guna Drive API
-                    // Untuk demo, kita simpan nama fail sahaja
-                    fileName = file.name;
-                    fileUrl = `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}`;
-                    showNotification('📤 Fail akan disimpan di Google Drive', 'info');
+                    uploadProgress.style.display = 'block';
+                    uploadProgress.textContent = '📤 Mengupload fail ke Google Drive...';
+
+                    // Gunakan Cloud Function untuk upload (lebih reliable)
+                    const result = await uploadViaCloudFunction(file);
+                    fileUrl = result.fileUrl;
+                    fileName = result.fileName;
+                    fileId = result.fileId;
+
+                    uploadProgress.textContent = '✅ Fail berjaya diupload!';
+                    showNotification('✅ Fail berjaya diupload ke Google Drive', 'success');
                 } catch (error) {
                     console.error('Upload error:', error);
-                    showNotification('❌ Gagal upload fail', 'error');
+                    uploadProgress.textContent = '❌ Gagal upload fail';
+                    showNotification('❌ Gagal upload fail ke Google Drive', 'error');
+                    return;
                 }
             }
 
@@ -335,6 +446,7 @@
                 status: taskStatus.value,
                 fileUrl: fileUrl,
                 fileName: fileName,
+                fileId: fileId,
                 updatedAt: new Date().toISOString()
             };
 
@@ -444,6 +556,10 @@
 
         console.log('✅ Tugasan page loaded successfully!');
         console.log('📁 Google Drive Folder ID:', DRIVE_FOLDER_ID);
+
+        // ===== EXPOSE FUNCTIONS =====
+        window.uploadToDrive = uploadToDrive;
+        window.uploadViaCloudFunction = uploadViaCloudFunction;
 
     </script>
 
@@ -1076,6 +1192,17 @@
             color: #ff4757;
         }
 
+        .upload-progress {
+            display: none;
+            padding: 8px 12px;
+            background: rgba(102, 126, 234, 0.1);
+            border-radius: 8px;
+            color: #667eea;
+            font-size: 13px;
+            margin-top: 8px;
+            text-align: center;
+        }
+
         .modal-box .modal-actions {
             display: flex;
             gap: 12px;
@@ -1293,6 +1420,7 @@
                             <label>📎 Lampiran (Upload ke Google Drive)</label>
                             <input type="file" id="taskFile" />
                             <div id="taskFilePreview" style="margin-top:8px;"></div>
+                            <div id="uploadProgress" class="upload-progress"></div>
                         </div>
                     </div>
 
