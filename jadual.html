@@ -143,6 +143,11 @@
             renderScheduleGrid();
             updateWeekDisplay();
             startLiveClock();
+            
+            // Request notification permission
+            if ("Notification" in window && Notification.permission === "default") {
+                Notification.requestPermission();
+            }
         });
 
         // ===== LIVE CLOCK =====
@@ -252,16 +257,6 @@
             return weekDates[day];
         }
 
-        function getCurrentDateStr() {
-            const now = new Date();
-            return formatDate(now);
-        }
-
-        function getCurrentDay() {
-            const days = ['Ahad', 'Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu'];
-            return days[new Date().getDay()];
-        }
-
         // ===== FORMAT TIME DISPLAY =====
         function formatTimeDisplay(timeRange) {
             if (!timeRange) return '';
@@ -284,10 +279,6 @@
             else endStr = `${hour2 - 12}:${m2} PM`;
 
             return `${startStr} - ${endStr}`;
-        }
-
-        function getStartTime(timeRange) {
-            return timeRange ? timeRange.split('-')[0] : '';
         }
 
         // ===== RENDER CLASS GRID =====
@@ -331,14 +322,13 @@
                                 <div class="subject-name">${data.subjectName}</div>
                                 <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
                                 <div class="room-number">🏫 ${data.room || ''}</div>
-                                <button class="delete-slot" data-id="${data.id}">✕</button>
+                                <button class="delete-slot" data-id="${data.id}" data-type="class">✕</button>
                             </div>
                         `;
-                        cell.querySelector('.delete-slot').addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            deleteClass(data.id);
+                        cell.addEventListener('click', (e) => {
+                            if (e.target.closest('.delete-slot')) return;
+                            editClass(data.id);
                         });
-                        cell.addEventListener('click', () => editClass(data.id));
                     } else {
                         cell.addEventListener('click', () => openClassModal(day, timeRange));
                         cell.innerHTML = `<span class="add-hint">+</span>`;
@@ -399,14 +389,13 @@
                                 <div class="subject-name">${data.subjectName}</div>
                                 <div class="lecturer-name">👨‍🏫 ${data.lecturer || ''}</div>
                                 <div class="room-number">🏫 ${data.room || ''}</div>
-                                <button class="delete-slot" data-id="${data.id}">✕</button>
+                                <button class="delete-slot" data-id="${data.id}" data-type="schedule">✕</button>
                             </div>
                         `;
-                        cell.querySelector('.delete-slot').addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            deleteSchedule(data.id);
+                        cell.addEventListener('click', (e) => {
+                            if (e.target.closest('.delete-slot')) return;
+                            editSchedule(data.id);
                         });
-                        cell.addEventListener('click', () => editSchedule(data.id));
                     } else {
                         cell.addEventListener('click', () => openScheduleModal(day, timeRange, weekDates[day]));
                         cell.innerHTML = `<span class="add-hint">+</span>`;
@@ -421,7 +410,6 @@
 
         // ===== CLASS CRUD =====
         function openClassModal(day, time, editData = null) {
-            // Auto-set day and time
             if (day) classDay.value = day;
             if (time) classTime.value = time;
 
@@ -454,126 +442,12 @@
             }
         }
 
-        async function deleteClass(id) {
-            if (!confirm('Padam jadual kelas ini? Akan padam juga di Jadual Perancangan.')) return;
-            try {
-                await deleteDoc(doc(db, "classes", id));
-
-                const toDelete = Object.keys(scheduleData).filter(key => {
-                    const data = scheduleData[key];
-                    return data.type === 'class' && data.classId === id;
-                });
-
-                for (const key of toDelete) {
-                    await deleteDoc(doc(db, "schedules", scheduleData[key].id));
-                }
-
-                showNotification('🗑️ Jadual kelas dan perancangan dipadam', 'info');
-                await loadClassData();
-                await loadScheduleData();
-                renderClassGrid();
-                renderScheduleGrid();
-            } catch (error) {
-                console.error('Error deleting class:', error);
-                showNotification('❌ Gagal memadam', 'error');
-            }
-        }
-
-        classForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!currentUser) return;
-
-            const data = {
-                userId: currentUser.uid,
-                day: classDay.value,
-                time: classTime.value,
-                subjectName: classSubject.value.trim(),
-                subjectCode: classCode.value.trim(),
-                lecturer: classLecturer.value.trim(),
-                room: classRoom.value.trim(),
-                color: classColor.value,
-                notification: classNotif.checked,
-                updatedAt: new Date().toISOString(),
-                type: 'class'
-            };
-
-            try {
-                let classId;
-                if (editingClassId) {
-                    await updateDoc(doc(db, "classes", editingClassId), data);
-                    classId = editingClassId;
-                    showNotification('✅ Jadual kelas dikemaskini!', 'success');
-                } else {
-                    const docRef = await addDoc(collection(db, "classes"), {
-                        ...data,
-                        createdAt: new Date().toISOString()
-                    });
-                    classId = docRef.id;
-                    showNotification('✅ Jadual kelas ditambah!', 'success');
-                }
-
-                classModal.classList.remove('show');
-                await loadClassData();
-                renderClassGrid();
-
-                await syncClassToSchedule(data, classId);
-
-                if (data.notification) {
-                    sendPushNotification(data);
-                }
-
-            } catch (error) {
-                console.error('Error saving class:', error);
-                showNotification('❌ Gagal menyimpan', 'error');
-            }
-        });
-
-        // ===== SYNC CLASS TO SCHEDULE =====
-        async function syncClassToSchedule(classData, classId) {
-            if (!currentUser) return;
-
-            const weekOffsets = [-4, -3, -2, -1, 0, 1, 2, 3, 4];
-
-            for (const offset of weekOffsets) {
-                const date = getDateForDay(classData.day, offset);
-                const dateStr = formatDate(date);
-                const key = `${dateStr}-${classData.day}-${classData.time}`;
-
-                if (scheduleData[key]) continue;
-
-                try {
-                    await addDoc(collection(db, "schedules"), {
-                        userId: currentUser.uid,
-                        day: classData.day,
-                        date: dateStr,
-                        time: classData.time,
-                        subjectName: classData.subjectName,
-                        subjectCode: classData.subjectCode,
-                        lecturer: classData.lecturer,
-                        room: classData.room,
-                        color: classData.color,
-                        notification: classData.notification,
-                        type: 'class',
-                        classId: classId,
-                        createdAt: new Date().toISOString()
-                    });
-                } catch (error) {
-                    console.error('Error syncing class to schedule:', error);
-                }
-            }
-
-            await loadScheduleData();
-            renderScheduleGrid();
-        }
-
         // ===== SCHEDULE CRUD =====
         function openScheduleModal(day, time, date, editData = null) {
-            // Auto-set day, time and date
             if (day) scheduleDay.value = day;
             if (time) scheduleTime.value = time;
             if (date) scheduleDate.value = formatDate(date);
 
-            // Check conflict with class
             const dateStr = scheduleDate.value;
             const conflictKey = `${dateStr}-${scheduleDay.value}-${scheduleTime.value}`;
             const isConflict = scheduleData[conflictKey] && scheduleData[conflictKey].type === 'class';
@@ -617,17 +491,43 @@
             }
         }
 
-        async function deleteSchedule(id) {
+        // ===== DELETE FUNCTIONS =====
+        async function deleteClassItem(id) {
+            if (!confirm('Padam jadual kelas ini? Akan padam juga di Jadual Perancangan.')) return;
+            try {
+                await deleteDoc(doc(db, "classes", id));
+                
+                const toDelete = Object.keys(scheduleData).filter(key => {
+                    const data = scheduleData[key];
+                    return data.type === 'class' && data.classId === id;
+                });
+                
+                for (const key of toDelete) {
+                    await deleteDoc(doc(db, "schedules", scheduleData[key].id));
+                }
+                
+                showNotification('🗑️ Jadual kelas dan perancangan dipadam', 'info');
+                await loadClassData();
+                await loadScheduleData();
+                renderClassGrid();
+                renderScheduleGrid();
+            } catch (error) {
+                console.error('Error deleting class:', error);
+                showNotification('❌ Gagal memadam', 'error');
+            }
+        }
+
+        async function deleteScheduleItem(id) {
             if (!confirm('Padam jadual perancangan ini?')) return;
             try {
                 const scheduleRef = doc(db, "schedules", id);
                 const scheduleSnap = await getDoc(scheduleRef);
                 const data = scheduleSnap.data();
-
+                
                 if (data && data.type === 'class' && data.classId) {
                     await deleteDoc(doc(db, "classes", data.classId));
                 }
-
+                
                 await deleteDoc(scheduleRef);
                 showNotification('🗑️ Jadual perancangan dipadam', 'info');
                 await loadClassData();
@@ -640,6 +540,110 @@
             }
         }
 
+        // ===== EVENT DELEGATION FOR DELETE BUTTONS =====
+        document.addEventListener('click', async function(e) {
+            const deleteBtn = e.target.closest('.delete-slot');
+            if (!deleteBtn) return;
+            
+            const id = deleteBtn.dataset.id;
+            const type = deleteBtn.dataset.type || 'schedule';
+            
+            if (type === 'class') {
+                await deleteClassItem(id);
+            } else {
+                await deleteScheduleItem(id);
+            }
+        });
+
+        // ===== CLASS FORM SUBMIT =====
+        classForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentUser) return;
+
+            const data = {
+                userId: currentUser.uid,
+                day: classDay.value,
+                time: classTime.value,
+                subjectName: classSubject.value.trim(),
+                subjectCode: classCode.value.trim(),
+                lecturer: classLecturer.value.trim(),
+                room: classRoom.value.trim(),
+                color: classColor.value,
+                notification: classNotif.checked,
+                updatedAt: new Date().toISOString(),
+                type: 'class'
+            };
+
+            try {
+                let classId;
+                if (editingClassId) {
+                    await updateDoc(doc(db, "classes", editingClassId), data);
+                    classId = editingClassId;
+                    showNotification('✅ Jadual kelas dikemaskini!', 'success');
+                } else {
+                    const docRef = await addDoc(collection(db, "classes"), {
+                        ...data,
+                        createdAt: new Date().toISOString()
+                    });
+                    classId = docRef.id;
+                    showNotification('✅ Jadual kelas ditambah!', 'success');
+                }
+
+                classModal.classList.remove('show');
+                await loadClassData();
+                renderClassGrid();
+                await syncClassToSchedule(data, classId);
+
+                if (data.notification) {
+                    setTimeout(() => {
+                        sendPushNotification(data);
+                    }, 1500);
+                }
+
+            } catch (error) {
+                console.error('Error saving class:', error);
+                showNotification('❌ Gagal menyimpan', 'error');
+            }
+        });
+
+        // ===== SYNC CLASS TO SCHEDULE =====
+        async function syncClassToSchedule(classData, classId) {
+            if (!currentUser) return;
+            const weekOffsets = [-4, -3, -2, -1, 0, 1, 2, 3, 4];
+
+            for (const offset of weekOffsets) {
+                const date = getDateForDay(classData.day, offset);
+                const dateStr = formatDate(date);
+                const key = `${dateStr}-${classData.day}-${classData.time}`;
+
+                if (scheduleData[key]) continue;
+
+                try {
+                    await addDoc(collection(db, "schedules"), {
+                        userId: currentUser.uid,
+                        day: classData.day,
+                        date: dateStr,
+                        time: classData.time,
+                        subjectName: classData.subjectName,
+                        subjectCode: classData.subjectCode,
+                        lecturer: classData.lecturer,
+                        room: classData.room,
+                        color: classData.color,
+                        notification: classData.notification,
+                        type: 'class',
+                        classId: classId,
+                        createdAt: new Date().toISOString()
+                    });
+                } catch (error) {
+                    console.error('Error syncing class to schedule:', error);
+                }
+            }
+
+            await loadScheduleData();
+            renderScheduleGrid();
+        }
+
+        // ===== SCHEDULE FORM SUBMIT =====
         scheduleForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!currentUser) return;
@@ -686,7 +690,9 @@
                 renderScheduleGrid();
 
                 if (data.notification) {
-                    sendPushNotification(data);
+                    setTimeout(() => {
+                        sendPushNotification(data);
+                    }, 1500);
                 }
 
             } catch (error) {
@@ -697,36 +703,56 @@
 
         // ===== PUSH NOTIFICATION =====
         function sendPushNotification(data) {
+            console.log('🔔 Sending notification for:', data.subjectName);
+            
             if (!("Notification" in window)) {
                 showNotification('⚠️ Browser tidak support notification', 'error');
                 return;
             }
 
             if (Notification.permission === "granted") {
-                new Notification('📚 MYPOLY - Peringatan', {
-                    body: `🕐 ${formatTimeDisplay(data.time)}\n📖 ${data.subjectName} (${data.subjectCode})\n👨‍🏫 ${data.lecturer}\n🏫 ${data.room}`,
-                    icon: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQJPPtvSjk6_fnQby9h0pJi3dMLhp-x1BHV2g&s'
-                });
+                try {
+                    const notification = new Notification('📚 MYPOLY - Peringatan', {
+                        body: `🕐 ${formatTimeDisplay(data.time)}\n📖 ${data.subjectName} (${data.subjectCode || ''})\n👨‍🏫 ${data.lecturer || ''}\n🏫 ${data.room || ''}`,
+                        icon: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQJPPtvSjk6_fnQby9h0pJi3dMLhp-x1BHV2g&s'
+                    });
+                    
+                    setTimeout(() => notification.close(), 10000);
+                    showNotification('🔔 Notifikasi dihantar!', 'success');
+                } catch (error) {
+                    console.error('Notification error:', error);
+                    showNotification('❌ Gagal hantar notifikasi', 'error');
+                }
             } else if (Notification.permission !== "denied") {
                 Notification.requestPermission().then(permission => {
                     if (permission === "granted") {
                         sendPushNotification(data);
+                    } else {
+                        showNotification('⚠️ Sila benarkan notifikasi dalam browser', 'error');
                     }
                 });
+            } else {
+                showNotification('⚠️ Notifikasi telah ditolak. Sila benarkan dalam browser.', 'error');
             }
         }
 
         // ===== SHOW NOTIFICATION =====
         function showNotification(message, type = 'info') {
+            console.log('📢 Notification:', message, type);
+            
+            const existing = document.querySelectorAll('.notification');
+            existing.forEach(el => el.remove());
+            
             const notification = document.createElement('div');
             notification.className = `notification ${type}`;
             notification.textContent = message;
             document.body.appendChild(notification);
-            setTimeout(() => notification.classList.add('show'), 100);
+            
+            setTimeout(() => notification.classList.add('show'), 50);
             setTimeout(() => {
                 notification.classList.remove('show');
                 setTimeout(() => notification.remove(), 300);
-            }, 3000);
+            }, 4000);
         }
 
         // ===== WEEK NAVIGATION =====
@@ -771,6 +797,21 @@
             openScheduleModal('Isnin', '08:00-08:30', weekDates['Isnin']);
         });
 
+        // ===== DELETE BUTTON IN MODAL =====
+        classDelete.addEventListener('click', async () => {
+            if (editingClassId) {
+                await deleteClassItem(editingClassId);
+                classModal.classList.remove('show');
+            }
+        });
+
+        scheduleDelete.addEventListener('click', async () => {
+            if (editingScheduleId) {
+                await deleteScheduleItem(editingScheduleId);
+                scheduleModal.classList.remove('show');
+            }
+        });
+
         // ===== KEYBOARD SHORTCUTS =====
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
@@ -799,10 +840,6 @@
         }, 60000);
 
         // ===== INIT =====
-        if ("Notification" in window && Notification.permission === "default") {
-            Notification.requestPermission();
-        }
-
         window.db = db;
         window.auth = auth;
         window.scheduleData = scheduleData;
@@ -1306,7 +1343,6 @@
             letter-spacing: 0.5px;
         }
 
-        /* ===== FIX DROPDOWN - Warna putih jadi nampak ===== */
         .modal-box .form-group input,
         .modal-box .form-group select {
             width: 100%;
@@ -1341,7 +1377,6 @@
             border-color: rgba(102, 126, 234, 0.3);
         }
 
-        /* Custom dropdown arrow */
         .modal-box .form-group select {
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23667eea' stroke-width='2' fill='none'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
