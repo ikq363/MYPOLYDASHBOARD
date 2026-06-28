@@ -108,6 +108,7 @@
                         endH += 1;
                         endM -= 60;
                     }
+                    if (endH >= 24) endH = 0;
                     const endHourStr = String(endH).padStart(2, '0');
                     const endMinStr = String(endM).padStart(2, '0');
                     slots.push(`${startHourStr}:${startMinStr}-${endHourStr}:${endMinStr}`);
@@ -222,6 +223,7 @@
                     const key = `${data.date}-${data.day}-${data.time}`;
                     scheduleData[key] = { id: doc.id, ...data };
                 });
+                window.scheduleData = scheduleData;
             } catch (error) {
                 console.error('Error loading schedules:', error);
             }
@@ -418,9 +420,11 @@
         }
 
         // ===== CLASS CRUD =====
-        function openClassModal(day, timeRange, editData = null) {
-            classDay.value = day;
-            classTime.value = timeRange;
+        function openClassModal(day, time, editData = null) {
+            // Auto-set day and time
+            if (day) classDay.value = day;
+            if (time) classTime.value = time;
+
             if (editData) {
                 classModalTitle.textContent = '✏️ Edit Jadual Kelas';
                 classSubject.value = editData.subjectName || '';
@@ -440,7 +444,7 @@
                 classDelete.style.display = 'none';
             }
             classModal.classList.add('show');
-            classSubject.focus();
+            setTimeout(() => classSubject.focus(), 100);
         }
 
         function editClass(id) {
@@ -453,10 +457,8 @@
         async function deleteClass(id) {
             if (!confirm('Padam jadual kelas ini? Akan padam juga di Jadual Perancangan.')) return;
             try {
-                // Delete from classes
                 await deleteDoc(doc(db, "classes", id));
 
-                // Find and delete from schedules
                 const toDelete = Object.keys(scheduleData).filter(key => {
                     const data = scheduleData[key];
                     return data.type === 'class' && data.classId === id;
@@ -514,7 +516,6 @@
                 await loadClassData();
                 renderClassGrid();
 
-                // Sync to schedule
                 await syncClassToSchedule(data, classId);
 
                 if (data.notification) {
@@ -527,11 +528,10 @@
             }
         });
 
-        // ===== SYNC CLASS TO SCHEDULE (All Weeks) =====
+        // ===== SYNC CLASS TO SCHEDULE =====
         async function syncClassToSchedule(classData, classId) {
             if (!currentUser) return;
 
-            // Get all weeks from -4 to +4 (9 weeks)
             const weekOffsets = [-4, -3, -2, -1, 0, 1, 2, 3, 4];
 
             for (const offset of weekOffsets) {
@@ -539,7 +539,6 @@
                 const dateStr = formatDate(date);
                 const key = `${dateStr}-${classData.day}-${classData.time}`;
 
-                // Skip if already exists in schedule
                 if (scheduleData[key]) continue;
 
                 try {
@@ -568,14 +567,15 @@
         }
 
         // ===== SCHEDULE CRUD =====
-        function openScheduleModal(day, timeRange, date, editData = null) {
-            scheduleDay.value = day;
-            scheduleDate.value = formatDate(date);
-            scheduleTime.value = timeRange;
+        function openScheduleModal(day, time, date, editData = null) {
+            // Auto-set day, time and date
+            if (day) scheduleDay.value = day;
+            if (time) scheduleTime.value = time;
+            if (date) scheduleDate.value = formatDate(date);
 
-            // Check for conflict with class
-            const dateStr = formatDate(date);
-            const conflictKey = `${dateStr}-${day}-${timeRange}`;
+            // Check conflict with class
+            const dateStr = scheduleDate.value;
+            const conflictKey = `${dateStr}-${scheduleDay.value}-${scheduleTime.value}`;
             const isConflict = scheduleData[conflictKey] && scheduleData[conflictKey].type === 'class';
 
             if (isConflict && !editData) {
@@ -604,7 +604,7 @@
                 scheduleDelete.style.display = 'none';
             }
             scheduleModal.classList.add('show');
-            scheduleSubject.focus();
+            setTimeout(() => scheduleSubject.focus(), 100);
         }
 
         function editSchedule(id) {
@@ -624,7 +624,6 @@
                 const scheduleSnap = await getDoc(scheduleRef);
                 const data = scheduleSnap.data();
 
-                // If it's a class type, also delete from classes
                 if (data && data.type === 'class' && data.classId) {
                     await deleteDoc(doc(db, "classes", data.classId));
                 }
@@ -649,7 +648,6 @@
             const day = scheduleDay.value;
             const timeRange = scheduleTime.value;
 
-            // Check for conflict
             const conflictKey = `${dateStr}-${day}-${timeRange}`;
             if (scheduleData[conflictKey] && scheduleData[conflictKey].type === 'class' && !editingScheduleId) {
                 showNotification('⚠️ Waktu ini ada kelas! Sila pilih masa lain.', 'error');
@@ -764,7 +762,10 @@
         scheduleModal.addEventListener('click', (e) => { if (e.target === scheduleModal) closeScheduleModal(); });
 
         // ===== ADD BUTTONS =====
-        addClassBtn.addEventListener('click', () => openClassModal('Isnin', '08:00-08:30'));
+        addClassBtn.addEventListener('click', () => {
+            openClassModal('Isnin', '08:00-08:30');
+        });
+
         addScheduleBtn.addEventListener('click', () => {
             const weekDates = getWeekDates(currentWeekOffset);
             openScheduleModal('Isnin', '08:00-08:30', weekDates['Isnin']);
@@ -786,7 +787,6 @@
             const currentDay = dayMap[now.getDay()];
             const dateStr = formatDate(now);
 
-            // Check all schedule data for matching time
             Object.values(scheduleData).forEach(data => {
                 const [startTime] = data.time.split('-');
                 if (data.day === currentDay &&
@@ -805,6 +805,7 @@
 
         window.db = db;
         window.auth = auth;
+        window.scheduleData = scheduleData;
 
     </script>
 
@@ -1304,24 +1305,51 @@
             margin-bottom: 4px;
             letter-spacing: 0.5px;
         }
+
+        /* ===== FIX DROPDOWN - Warna putih jadi nampak ===== */
         .modal-box .form-group input,
         .modal-box .form-group select {
             width: 100%;
             padding: 10px 14px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 2px solid rgba(255, 255, 255, 0.06);
+            background: rgba(255, 255, 255, 0.08);
+            border: 2px solid rgba(255, 255, 255, 0.1);
             border-radius: 10px;
-            color: #ffffff;
+            color: #ffffff !important;
             font-size: 14px;
             transition: all 0.3s ease;
             outline: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
         }
-        .modal-box .form-group input:focus,
-        .modal-box .form-group select:focus {
+
+        .modal-box .form-group select option {
+            background: #1a1a2e;
+            color: #ffffff !important;
+            padding: 8px;
+        }
+
+        .modal-box .form-group select:focus,
+        .modal-box .form-group input:focus {
             border-color: #667eea;
-            background: rgba(255, 255, 255, 0.08);
-            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.08);
+            background: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
         }
+
+        .modal-box .form-group select:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(102, 126, 234, 0.3);
+        }
+
+        /* Custom dropdown arrow */
+        .modal-box .form-group select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23667eea' stroke-width='2' fill='none'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            padding-right: 40px;
+            cursor: pointer;
+        }
+
         .modal-box .form-group input[type="color"] {
             padding: 4px;
             height: 44px;
@@ -1701,7 +1729,7 @@
     <script>
         // ===== POPULATE TIME DROPDOWNS =====
         function populateTimeSelects() {
-            // Class times
+            // Class times: 7:30 AM - 6:00 PM
             const classTimes = [];
             for (let h = 7; h < 18; h++) {
                 for (let m = 0; m < 60; m += 30) {
@@ -1727,7 +1755,7 @@
                 classSelect.appendChild(opt);
             });
 
-            // Schedule times (24 hours)
+            // Schedule times: 24 hours
             const scheduleTimes = [];
             for (let h = 0; h < 24; h++) {
                 for (let m = 0; m < 60; m += 30) {
@@ -1791,7 +1819,7 @@
             document.getElementById('scheduleDate').value = formatDateDisplay(date);
 
             // Check conflict
-            const dateStr = formatDateDisplay(date);
+            const dateStr = document.getElementById('scheduleDate').value;
             const conflictKey = `${dateStr}-${day}-${time}`;
             const hasConflict = window.scheduleData && window.scheduleData[conflictKey] &&
                 window.scheduleData[conflictKey].type === 'class';
